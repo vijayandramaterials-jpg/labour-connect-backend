@@ -159,17 +159,28 @@ const verifyLabour = async (req, res) => {
 
 // 5. [REJECT LOGIC] - नकली या गलत फॉर्म को डिलीट करना
 const rejectLabour = async (req, res) => {
-  const { id } = req.params;
   try {
-    await db.query("DELETE FROM labours WHERE id = $1", [id]);
-    res.json({
-      success: true,
-      message: "कारीगर का फॉर्म रिजेक्ट (डिलीट) कर दिया गया है!",
-    });
-  } catch (error) {
+    const { id } = req.params;
+    const { reason } = req.body; // एडमिन जो कारण टाइप करेगा
+
+    // कारीगर को डिलीट करने के बजाय उसका status 'rejected' कर दें और कारण सेव कर दें
+    const result = await db.query(
+      "UPDATE labours SET status = 'rejected', reject_reason = $1 WHERE id = $2 RETURNING *",
+      [reason, id],
+    );
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "कारीगर नहीं मिला!" });
+    }
+
     res
-      .status(500)
-      .json({ success: false, message: "रिजेक्ट करने में समस्या हुई।" });
+      .status(200)
+      .json({ success: true, message: "कारीगर रिजेक्ट कर दिया गया है।" });
+  } catch (error) {
+    console.error("Reject Error:", error);
+    res.status(500).json({ success: false, message: "सर्वर एरर" });
   }
 };
 
