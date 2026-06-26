@@ -1,4 +1,5 @@
-const admin = require("firebase-admin");
+const { initializeApp, cert } = require("firebase-admin/app");
+const { getMessaging } = require("firebase-admin/messaging");
 
 let serviceAccount;
 
@@ -9,8 +10,12 @@ if (process.env.FIREBASE_KEY) {
   serviceAccount = require("./firebase-key.json");
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
+// नया तरीका (Modular API)
+const app = initializeApp({
+  credential: cert(serviceAccount),
 });
 
-module.exports = admin;
+const messaging = getMessaging(app);
+
+// हम सिर्फ messaging एक्सपोर्ट कर रहे हैं ताकि कोड हल्का रहे
+module.exports = { messaging };

@@ -1,8 +1,7 @@
-const admin = require("../config/firebaseConfig");
+const { messaging } = require("../config/firebaseConfig");
 
 exports.sendAd = async (req, res) => {
   try {
-    // अब Flutter ऐप हमें टाइटल, मैसेज और टॉपिक (किसे भेजना है) तीनों चीज़ें भेजेगा
     const { title, body, topic } = req.body;
 
     const message = {
@@ -10,10 +9,11 @@ exports.sendAd = async (req, res) => {
         title: title,
         body: body,
       },
-      topic: topic, // 🎯 यहाँ अब 'clients' या 'labours' ऑटोमैटिक सेट हो जाएगा
+      topic: topic,
     };
 
-    const response = await admin.messaging().send(message);
+    // यहाँ admin.messaging().send की जगह सीधे messaging.send() का इस्तेमाल
+    const response = await messaging.send(message);
 
     res
       .status(200)
