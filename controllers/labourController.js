@@ -242,6 +242,34 @@ const searchLabours = async (req, res) => {
   }
 };
 
+const editLabourProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, phone, skill, address } = req.body;
+
+    // कारीगर का नया डेटा अपडेट करें
+    const result = await db.query(
+      "UPDATE labours SET name = $1, phone = $2, skill = $3, address = $4 WHERE id = $5 RETURNING *",
+      [name, phone, skill, address, id],
+    );
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "कारीगर नहीं मिला!" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "प्रोफाइल अपडेट हो गई!",
+      data: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Edit Profile Error:", error);
+    res.status(500).json({ success: false, message: "सर्वर एरर" });
+  }
+};
+
 // सबसे नीचे वाले module.exports को बदलकर उसमें rejectLabour भी जोड़ दें:
 module.exports = {
   addLabour,
@@ -251,4 +279,5 @@ module.exports = {
   rejectLabour,
   labourLogin,
   searchLabours,
+  editLabourProfile,
 };

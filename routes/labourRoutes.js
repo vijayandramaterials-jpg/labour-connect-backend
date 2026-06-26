@@ -33,4 +33,6 @@ router.post("/login", labourLogin);
 // 🔴 2. यहाँ सिर्फ searchLabours लिखना है
 router.get("/search", searchLabours);
 
+router.put("/:id/edit", editLabourProfile);
+
 module.exports = router;
