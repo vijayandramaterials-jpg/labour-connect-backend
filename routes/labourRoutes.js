@@ -8,6 +8,7 @@ const {
   verifyLabour,
   rejectLabour,
   labourLogin,
+  searchLabours, // 🔴 1. इसे यहाँ Import लिस्ट में जोड़ना ज़रूरी है
 } = require("../controllers/labourController");
 
 // Multer in-memory configuration
@@ -28,5 +29,8 @@ router.patch("/:id/verify", verifyLabour); // ID ke sath active karne ke liye
 router.delete("/:id/reject", rejectLabour);
 
 router.post("/login", labourLogin);
+
+// 🔴 2. यहाँ सिर्फ searchLabours लिखना है
+router.get("/search", searchLabours);
 
 module.exports = router;

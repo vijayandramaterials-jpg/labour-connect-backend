@@ -206,6 +206,31 @@ const labourLogin = async (req, res) => {
   }
 };
 
+const searchLabours = async (req, res) => {
+  try {
+    const { query: searchQuery } = req.query; // ग्राहक जो शहर/एरिया सर्च करेगा
+
+    // अगर ग्राहक ने कुछ नहीं लिखा है, तो सारे वेरीफाइड कारीगर दिखा दो
+    if (!searchQuery) {
+      const result = await db.query(
+        "SELECT * FROM labours WHERE status = 'verified'",
+      );
+      return res.status(200).json({ success: true, data: result.rows });
+    }
+
+    // अगर सर्च में कुछ लिखा है, तो 'address' कॉलम में उसे ढूँढो (ILIKE का इस्तेमाल करके)
+    const result = await db.query(
+      "SELECT * FROM labours WHERE status = 'verified' AND address ILIKE $1",
+      [`%${searchQuery}%`],
+    );
+
+    res.status(200).json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error("Search Error:", error);
+    res.status(500).json({ success: false, message: "सर्वर एरर" });
+  }
+};
+
 // सबसे नीचे वाले module.exports को बदलकर उसमें rejectLabour भी जोड़ दें:
 module.exports = {
   addLabour,
@@ -214,4 +239,5 @@ module.exports = {
   verifyLabour,
   rejectLabour,
   labourLogin,
+  searchLabours,
 };
