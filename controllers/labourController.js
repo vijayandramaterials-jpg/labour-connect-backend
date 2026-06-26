@@ -270,6 +270,66 @@ const editLabourProfile = async (req, res) => {
   }
 };
 
+// 1. ग्राहक द्वारा दिया गया रिव्यू डेटाबेस में सेव करना
+const addReview = async (req, res) => {
+  try {
+    const { labour_id, customer_name, rating, comment } = req.body;
+
+    if (!labour_id || !rating) {
+      return res
+        .status(400)
+        .json({ success: false, message: "कारीगर ID और रेटिंग ज़रूरी है!" });
+    }
+
+    const result = await db.query(
+      "INSERT INTO reviews (labour_id, customer_name, rating, comment) VALUES ($1, $2, $3, $4) RETURNING *",
+      [labour_id, customer_name, rating, comment],
+    );
+
+    res
+      .status(201)
+      .json({
+        success: true,
+        message: "रिव्यू देने के लिए धन्यवाद! ⭐",
+        data: result.rows[0],
+      });
+  } catch (error) {
+    console.error("Add Review Error:", error);
+    res.status(500).json({ success: false, message: "सर्वर एरर" });
+  }
+};
+
+// 2. किसी एक कारीगर के सारे रिव्यू और उसकी एवरेज रेटिंग निकालना
+const getLabourReviews = async (req, res) => {
+  try {
+    const { labour_id } = req.params;
+
+    // सारे रिव्यू निकालना
+    const reviewsResult = await db.query(
+      "SELECT * FROM reviews WHERE labour_id = $1 ORDER BY created_at DESC",
+      [labour_id],
+    );
+
+    // एवरेज रेटिंग की गणना करना
+    const avgResult = await db.query(
+      "SELECT AVG(rating) as average_rating, COUNT(id) as total_reviews FROM reviews WHERE labour_id = $1",
+      [labour_id],
+    );
+
+    res.status(200).json({
+      success: true,
+      average_rating: parseFloat(avgResult.rows[0].average_rating || 0).toFixed(
+        1,
+      ),
+      total_reviews: parseInt(avgResult.rows[0].total_reviews || 0),
+      reviews: reviewsResult.rows,
+    });
+  } catch (error) {
+    console.error("Get Reviews Error:", error);
+    res.status(500).json({ success: false, message: "सर्वर एरर" });
+  }
+};
+
 // सबसे नीचे वाले module.exports को बदलकर उसमें rejectLabour भी जोड़ दें:
 module.exports = {
   addLabour,
@@ -280,4 +340,6 @@ module.exports = {
   labourLogin,
   searchLabours,
   editLabourProfile,
+  addReview,
+  getLabourReviews,
 };
