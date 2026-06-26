@@ -16,6 +16,7 @@ const notificationRoutes = require("./routes/notificationRoutes"); // 🔴 1. �
 app.use("/api/payment", paymentRoutes);
 app.use("/api/labours", require("./routes/labourRoutes"));
 app.use("/api/notifications", notificationRoutes); // 🔴 2. नोटिफिकेशन का रूट यहाँ जोड़ दिया
+app.use("/api/customers", require("./routes/customerRoutes"));
 
 // --- API टेस्टिंग रूट ---
 app.get("/", (req, res) => {
