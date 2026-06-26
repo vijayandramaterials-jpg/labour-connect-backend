@@ -8,7 +8,8 @@ const {
   verifyLabour,
   rejectLabour,
   labourLogin,
-  searchLabours, // 🔴 1. इसे यहाँ Import लिस्ट में जोड़ना ज़रूरी है
+  searchLabours,
+  editLabourProfile,
 } = require("../controllers/labourController");
 
 // Multer in-memory configuration
