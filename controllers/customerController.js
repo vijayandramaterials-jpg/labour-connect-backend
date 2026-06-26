@@ -1,9 +1,14 @@
-const supabase = require("../config/db"); // अगर आपका सुपाबेस फाइल का नाम अलग है, तो उसे यहाँ सही कर लें
+const { createClient } = require("@supabase/supabase-js");
+
+// सीधे आपकी .env फाइल से URL और Key लेकर Supabase चालू करें
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 exports.registerCustomer = async (req, res) => {
   try {
     const { name, phone } = req.body;
-    console.log("📱 Flutter से डेटा आया:", name, phone); // यह Render के लॉग्स में दिखेगा
+    console.log("📱 Flutter से डेटा आया:", name, phone);
 
     // 1. चेक करें कि क्या यह नंबर पहले से डेटाबेस में है?
     const { data: existingCustomer, error: searchError } = await supabase
