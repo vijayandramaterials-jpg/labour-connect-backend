@@ -26,7 +26,18 @@ const uploadToSupabase = async (file, folderName) => {
 
 // 1. Naya Kariagar Register Karna (With Duplicate Check & Verification Pending)
 const addLabour = async (req, res) => {
-  const { name, phone, skill, daily_wage, location, aadhaar_number } = req.body;
+  // 🔴 सुधार 1: req.body से city, area और pin को भी एक्सट्रैक्ट करें
+  const {
+    name,
+    phone,
+    skill,
+    daily_wage,
+    location,
+    aadhaar_number,
+    city,
+    area,
+    pin,
+  } = req.body;
 
   try {
     // [DUPLICATE CHECK LOGIC] - Kya phone ya aadhaar pehle se hai?
@@ -41,6 +52,9 @@ const addLabour = async (req, res) => {
         message: "यह मोबाइल नंबर या आधार नंबर पहले से रजिस्टर्ड है!",
       });
     }
+
+    // 🔴 सुधार 2: पुराना गलत पिन मैचिंग वाला ब्लॉक (जो सर्वर क्रैश कर रहा था) यहाँ से पूरी तरह हटा दिया गया है।
+    // रजिस्ट्रेशन में हम पिन को सिर्फ सेव करते हैं, मैच नहीं करते।
 
     // Files ko read karna (Multer ke zariye)
     const profileFile = req.files["profile_photo"]
@@ -58,11 +72,17 @@ const addLabour = async (req, res) => {
     const aadhaarFrontUrl = await uploadToSupabase(frontFile, "aadhaar_front");
     const aadhaarBackUrl = await uploadToSupabase(backFile, "aadhaar_back");
 
-    // Database mein data dalna (is_verified default false rahega)
+    // 🔴 सुधार 3: SQL Query में city, area, और pin कॉलम और उनकी Values ($10, $11, $12) को जोड़ दिया है
     const query = `
-            INSERT INTO labours (name, phone, skill, daily_wage, location, aadhaar_number, profile_photo_url, aadhaar_front_url, aadhaar_back_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;
-        `;
+      INSERT INTO labours (
+        name, phone, skill, daily_wage, location, aadhaar_number, 
+        profile_photo_url, aadhaar_front_url, aadhaar_back_url, 
+        city, area, pin
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+      RETURNING *;
+    `;
+
     const values = [
       name,
       phone,
@@ -73,7 +93,11 @@ const addLabour = async (req, res) => {
       profilePhotoUrl,
       aadhaarFrontUrl,
       aadhaarBackUrl,
+      city || "", // अगर खाली हो तो खाली स्ट्रिंग जाए
+      area || "", // अगर खाली हो तो खाली स्ट्रिंग जाए
+      pin, // कारीगर का खुफिया 4-अंकों का पिन
     ];
+
     const result = await db.query(query, values);
 
     res.status(201).json({
@@ -295,15 +319,13 @@ const rejectLabour = async (req, res) => {
 
 // 6. [LABOUR LOGIN] - कारीगर का लॉगिन और स्टेटस चेक करना
 const labourLogin = async (req, res) => {
-  const { phone } = req.body;
+  const { phone, pin } = req.body; // 🔴 पिन भी स्वीकार करें
   try {
-    // 🔴 यहाँ हमने average_rating और total_reviews को भी लॉगिन क्वेरी में जोड़ दिया है
     const query = `
       SELECT 
         l.*, 
         COALESCE(ROUND(AVG(r.rating), 1), 0.0) AS average_rating, 
-        COUNT(r.id) AS total_reviews,
-        (SELECT COUNT(*) FROM purchased_contacts pc WHERE pc.labour_id::text = l.id::text) AS unlock_count
+        COUNT(r.id) AS total_reviews
       FROM labours l 
       LEFT JOIN reviews r ON l.id = r.labour_id
       WHERE l.phone = $1
@@ -313,9 +335,16 @@ const labourLogin = async (req, res) => {
     const result = await db.query(query, [phone]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({
+      return res
+        .status(404)
+        .json({ success: false, message: "यह नंबर रजिस्टर्ड नहीं है।" });
+    }
+
+    // 🔴 सुरक्षा जाँच: चेक करें कि डेटाबेस का पिन और यूज़र का पिन मैच करता है या नहीं
+    if (result.rows[0].pin !== pin) {
+      return res.status(401).json({
         success: false,
-        message: "यह नंबर रजिस्टर्ड नहीं है। कृपया पहले नया अकाउंट बनाएं।",
+        message: "गलत सीक्रेट पिन! कृपया सही पिन डालें। ❌",
       });
     }
 
