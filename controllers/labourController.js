@@ -94,8 +94,15 @@ const getLabours = async (req, res) => {
     // URL से सर्च (नाम/लोकेशन) और स्किल लेना
     const { search, skill } = req.query;
 
-    // हमारी बेसिक Query
-    let query = "SELECT * FROM labours WHERE is_verified = true";
+    // 🔴 यहाँ सही बदलाव किया गया है: basic query में लाइव रेटिंग और टोटल रिव्यू काउंट जोड़ दिया है
+    let query = `
+      SELECT 
+        *, 
+        COALESCE((SELECT ROUND(AVG(rating), 1) FROM reviews WHERE reviews.labour_id::text = labours.id::text), 0.0) AS average_rating,
+        (SELECT COUNT(*) FROM reviews WHERE reviews.labour_id::text = labours.id::text) AS total_reviews
+      FROM labours 
+      WHERE is_verified = true
+    `;
     const values = [];
     let valueIndex = 1;
 
@@ -188,13 +195,17 @@ const rejectLabour = async (req, res) => {
 const labourLogin = async (req, res) => {
   const { phone } = req.body;
   try {
-    // 🔴 नया लॉजिक: कारीगर का डेटा लाएं और purchased_contacts टेबल से गिनें कि यह ID कितनी बार अनलॉक हुई है
+    // 🔴 यहाँ हमने average_rating और total_reviews को भी लॉगिन क्वेरी में जोड़ दिया है
     const query = `
       SELECT 
         l.*, 
+        COALESCE(ROUND(AVG(r.rating), 1), 0.0) AS average_rating, 
+        COUNT(r.id) AS total_reviews,
         (SELECT COUNT(*) FROM purchased_contacts pc WHERE pc.labour_id::text = l.id::text) AS unlock_count
       FROM labours l 
+      LEFT JOIN reviews r ON l.id = r.labour_id
       WHERE l.phone = $1
+      GROUP BY l.id
     `;
 
     const result = await db.query(query, [phone]);
@@ -286,13 +297,11 @@ const addReview = async (req, res) => {
       [labour_id, customer_name, rating, comment],
     );
 
-    res
-      .status(201)
-      .json({
-        success: true,
-        message: "रिव्यू देने के लिए धन्यवाद! ⭐",
-        data: result.rows[0],
-      });
+    res.status(201).json({
+      success: true,
+      message: "रिव्यू देने के लिए धन्यवाद! ⭐",
+      data: result.rows[0],
+    });
   } catch (error) {
     console.error("Add Review Error:", error);
     res.status(500).json({ success: false, message: "सर्वर एरर" });
