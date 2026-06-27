@@ -453,4 +453,5 @@ module.exports = {
   editLabourProfile,
   addReview,
   getLabourReviews,
+  postJobAndNotify,
 };
