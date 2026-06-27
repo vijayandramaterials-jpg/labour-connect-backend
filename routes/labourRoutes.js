@@ -28,8 +28,8 @@ router.get("/", getLabours); // App pe sirf active log dikhenge
 router.post("/", multiUpload, addLabour); // Photo ke sath registration
 
 // Admin Verification Routes
-router.get("/pending", getPendingLabours); // Pending list dekhne ke liye
-router.patch("/:id/verify", verifyLabour); // ID ke sath active karne ke liye
+router.get("/admin/pending", getPendingLabours);
+router.put("/admin/verify/:id", verifyLabour); // ID ke sath active karne ke liye
 router.delete("/:id/reject", rejectLabour);
 
 router.post("/login", labourLogin);
