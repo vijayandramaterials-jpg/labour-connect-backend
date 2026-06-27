@@ -261,7 +261,19 @@ const postJobAndNotify = async (req, res) => {
 };
 
 // 3. [VERIFICATION CHECK OPTION] - Admin ke liye pending list dekhna
-const getPendingLabours;
+const getPendingLabours = async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT * FROM labours WHERE is_verified = false OR is_verified IS NULL ORDER BY created_at DESC",
+    );
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error("Pending Labours Error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "डेटा लाने में समस्या हुई।" });
+  }
+};
 
 // 4. [APPROVE LOGIC] - Kariagar ko verify (Active) karna
 const verifyLabour = async (req, res) => {
