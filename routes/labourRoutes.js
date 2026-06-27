@@ -12,6 +12,7 @@ const {
   editLabourProfile,
   addReview,
   getLabourReviews,
+  postJobAndNotify,
 } = require("../controllers/labourController");
 
 // Multer in-memory configuration
@@ -40,5 +41,7 @@ router.put("/:id/edit", editLabourProfile);
 
 router.post("/reviews", addReview);
 router.get("/:labour_id/reviews", getLabourReviews);
+
+router.post("/jobs/broadcast", postJobAndNotify);
 
 module.exports = router;

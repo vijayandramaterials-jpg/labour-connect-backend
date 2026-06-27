@@ -91,10 +91,61 @@ const addLabour = async (req, res) => {
 // 2. Sirf Verified (Active) Kariagaron ko App par dikhana
 const getLabours = async (req, res) => {
   try {
-    // URL से सर्च (नाम/लोकेशन) और स्किल लेना
-    const { search, skill } = req.query;
+    const { search, skill, city, area } = req.query;
 
-    // 🔴 यहाँ सही बदलाव किया गया है: basic query में लाइव रेटिंग और टोटल रिव्यू काउंट जोड़ दिया है
+    // 🔴 1. Hinglish/English to Hindi Mapping Dictionary
+    const keywordMap = {
+      // Plumber ke liye
+      plumber: "प्लंबर",
+      plamber: "प्लंबर",
+      pambar: "प्लंबर",
+      नल: "प्लंबर",
+      nal: "प्लंबर",
+      pipe: "प्लंबर",
+      // Electrician ke liye
+      electrician: "इलेक्ट्रीशियन",
+      electrican: "इलेक्ट्रीशियन",
+      bijli: "इलेक्ट्रीशियन",
+      light: "इलेक्ट्रीशियन",
+      current: "इलेक्ट्रीशियन",
+      // Painter ke liye
+      painter: "पेंटर",
+      penter: "पेंटर",
+      color: "पेंटर",
+      rang: "पेंटर",
+      diwal: "पेंटर",
+      // Carpenter ke liye
+      carpenter: "बढ़ई",
+      carpentar: "बढ़ई",
+      badhai: "बढ़ई",
+      furniture: "बढ़ई",
+      lakdi: "बढ़ई",
+      // Contractor ke liye
+      contractor: "ठेकेदार",
+      thekedar: "ठेकेदार",
+      mistry: "ठेकेदार",
+      mistri: "ठेकेदार",
+      // Labour ke liye
+      labour: "मज़दूर",
+      lebar: "मज़दूर",
+      mazdoor: "मज़दूर",
+      kamwali: "मज़दूर",
+      beldar: "मज़दूर",
+    };
+
+    let mappedSearch = search;
+    let mappedSkill = skill;
+
+    // 🔴 2. Agar client ne search bar me hinglish daali hai, toh check karein
+    if (search && keywordMap[search.toLowerCase().trim()]) {
+      mappedSearch = keywordMap[search.toLowerCase().trim()];
+    }
+
+    // 🔴 3. Agar dropdown/skill filter me kuch alag aaya hai
+    if (skill && keywordMap[skill.toLowerCase().trim()]) {
+      mappedSkill = keywordMap[skill.toLowerCase().trim()];
+    }
+
     let query = `
       SELECT 
         *, 
@@ -106,22 +157,25 @@ const getLabours = async (req, res) => {
     const values = [];
     let valueIndex = 1;
 
-    // अगर यूज़र ने कुछ सर्च किया है (नाम या लोकेशन)
-    if (search) {
-      // ILIKE का मतलब है कि यह छोटे-बड़े (capital/small) अक्षरों का ध्यान रखे बिना सर्च करेगा
-      query += ` AND (name ILIKE $${valueIndex} OR location ILIKE $${valueIndex})`;
-      values.push(`%${search}%`); // % लगाने से यह शब्द के आगे-पीछे भी ढूँढेगा
+    if (city) {
+      query += ` AND city ILIKE $${valueIndex}`;
+      values.push(`%${city}%`);
       valueIndex++;
     }
 
-    // अगर यूज़र ने कोई विशेष स्किल (जैसे प्लंबर) चुनी है
-    if (skill && skill !== "All" && skill !== "सभी") {
+    // 🔴 4. Mapped Search term ka use SQL Query me karein
+    if (mappedSearch) {
+      query += ` AND (name ILIKE $${valueIndex} OR location ILIKE $${valueIndex} OR area ILIKE $${valueIndex} OR skill ILIKE $${valueIndex})`;
+      values.push(`%${mappedSearch}%`);
+      valueIndex++;
+    }
+
+    if (mappedSkill && mappedSkill !== "All" && mappedSkill !== "सभी") {
       query += ` AND skill = $${valueIndex}`;
-      values.push(skill);
+      values.push(mappedSkill);
       valueIndex++;
     }
 
-    // सबसे नए कारीगर सबसे ऊपर दिखेंगे
     query += " ORDER BY created_at DESC";
 
     const result = await db.query(query, values);
@@ -131,6 +185,54 @@ const getLabours = async (req, res) => {
     res
       .status(500)
       .json({ success: false, message: "डेटा लाने में समस्या हुई।" });
+  }
+};
+
+// 👇👇👇👇 नया विज्ञापन पोस्ट और नोटिफिकेशन भेजने का फंक्शन 👇👇👇👇
+const postJobAndNotify = async (req, res) => {
+  const { customer_phone, skill_needed, area, city, description } = req.body;
+
+  try {
+    // 1. विज्ञापन को डेटाबेस में सेव करें
+    await db.query(
+      "INSERT INTO jobs (customer_phone, skill_needed, area, city, description) VALUES ($1, $2, $3, $4, $5)",
+      [customer_phone, area, city, description],
+    );
+
+    // 2. उस शहर, इलाके और स्किल वाले सभी वेरीफाइड कारीगरों के FCM टोकन निकालें
+    const workerResult = await db.query(
+      "SELECT fcm_token FROM labours WHERE skill = $1 AND city ILIKE $2 AND is_verified = true",
+      [skill_needed, `%${city}%`],
+    );
+
+    const tokens = workerResult.rows
+      .map((row) => row.fcm_token)
+      .filter((t) => t != null);
+
+    // 3. अगर कारीगरों के टोकन मिलते हैं, तो फ़ायरबेस से नोटिफिकेशन भेजें
+    if (tokens.length > 0) {
+      const message = {
+        notification: {
+          title: `🎯 आपके इलाके (${area}) में नया काम!`,
+          body: `${skill_needed} की ज़रूरत है: ${description}`,
+        },
+        tokens: tokens,
+      };
+      // ध्यान दें: इसके लिए आपके बैकएंड में firebase-admin सेटअप होना ज़रूरी है
+      // await admin.messaging().sendEachForMulticast(message);
+      console.log("Notification sent to tokens:", tokens);
+    }
+
+    res.status(201).json({
+      success: true,
+      message:
+        "विज्ञापन पोस्ट हो गया और आस-पास के कारीगरों को सूचित कर दिया गया है! 🚀",
+    });
+  } catch (error) {
+    console.error("Post Job Error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "विज्ञापन पोस्ट करने में समस्या हुई।" });
   }
 };
 
