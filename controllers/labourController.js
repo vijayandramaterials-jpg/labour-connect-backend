@@ -331,6 +331,8 @@ const labourLogin = async (req, res) => {
       LEFT JOIN reviews r ON l.id = r.labour_id
       WHERE l.phone = $1
       GROUP BY l.id
+      ORDER BY l.created_at DESC   -- 🔴 यह सबसे नया अकाउंट पहले लाएगा
+      LIMIT 1                      -- 🔴 यह सिर्फ एक ही (सबसे सही) अकाउंट ऐप को भेजेगा
     `;
 
     const result = await db.query(query, [phone]);
