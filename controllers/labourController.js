@@ -24,9 +24,8 @@ const uploadToSupabase = async (file, folderName) => {
   return publicUrlData.publicUrl;
 };
 
-// 1. Naya Kariagar Register Karna (With Duplicate Check & Verification Pending)
+// 1. Naya Kariagar Register Karna (Without PIN)
 const addLabour = async (req, res) => {
-  // 🔴 सुधार 1: req.body से city, area और pin को भी एक्सट्रैक्ट करें
   const {
     name,
     phone,
@@ -36,11 +35,10 @@ const addLabour = async (req, res) => {
     aadhaar_number,
     city,
     area,
-    pin,
   } = req.body;
 
   try {
-    // [DUPLICATE CHECK LOGIC] - Kya phone ya aadhaar pehle se hai?
+    // Duplicate Check - Kya phone ya aadhaar pehle se hai?
     const duplicateCheck = await db.query(
       "SELECT * FROM labours WHERE phone = $1 OR aadhaar_number = $2",
       [phone, aadhaar_number],
@@ -52,9 +50,6 @@ const addLabour = async (req, res) => {
         message: "यह मोबाइल नंबर या आधार नंबर पहले से रजिस्टर्ड है!",
       });
     }
-
-    // 🔴 सुधार 2: पुराना गलत पिन मैचिंग वाला ब्लॉक (जो सर्वर क्रैश कर रहा था) यहाँ से पूरी तरह हटा दिया गया है।
-    // रजिस्ट्रेशन में हम पिन को सिर्फ सेव करते हैं, मैच नहीं करते।
 
     // Files ko read karna (Multer ke zariye)
     const profileFile = req.files["profile_photo"]
@@ -72,14 +67,14 @@ const addLabour = async (req, res) => {
     const aadhaarFrontUrl = await uploadToSupabase(frontFile, "aadhaar_front");
     const aadhaarBackUrl = await uploadToSupabase(backFile, "aadhaar_back");
 
-    // 🔴 सुधार 3: SQL Query में city, area, और pin कॉलम और उनकी Values ($10, $11, $12) को जोड़ दिया है
+    // 🔴 पिन कॉलम हटा दिया गया है
     const query = `
       INSERT INTO labours (
         name, phone, skill, daily_wage, location, aadhaar_number, 
         profile_photo_url, aadhaar_front_url, aadhaar_back_url, 
-        city, area, pin
+        city, area
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
       RETURNING *;
     `;
 
@@ -93,9 +88,8 @@ const addLabour = async (req, res) => {
       profilePhotoUrl,
       aadhaarFrontUrl,
       aadhaarBackUrl,
-      city || "", // अगर खाली हो तो खाली स्ट्रिंग जाए
-      area || "", // अगर खाली हो तो खाली स्ट्रिंग जाए
-      pin, // कारीगर का खुफिया 4-अंकों का पिन
+      city || "",
+      area || "",
     ];
 
     const result = await db.query(query, values);
@@ -117,39 +111,32 @@ const getLabours = async (req, res) => {
   try {
     const { search, skill, city, area } = req.query;
 
-    // 🔴 1. Hinglish/English to Hindi Mapping Dictionary
     const keywordMap = {
-      // Plumber ke liye
       plumber: "प्लंबर",
       plamber: "प्लंबर",
       pambar: "प्लंबर",
       नल: "प्लंबर",
       nal: "प्लंबर",
       pipe: "प्लंबर",
-      // Electrician ke liye
       electrician: "इलेक्ट्रीशियन",
       electrican: "इलेक्ट्रीशियन",
       bijli: "इलेक्ट्रीशियन",
       light: "इलेक्ट्रीशियन",
       current: "इलेक्ट्रीशियन",
-      // Painter ke liye
       painter: "पेंटर",
       penter: "पेंटर",
       color: "पेंटर",
       rang: "पेंटर",
       diwal: "पेंटर",
-      // Carpenter ke liye
       carpenter: "बढ़ई",
       carpentar: "बढ़ई",
       badhai: "बढ़ई",
       furniture: "बढ़ई",
       lakdi: "बढ़ई",
-      // Contractor ke liye
       contractor: "ठेकेदार",
       thekedar: "ठेकेदार",
       mistry: "ठेकेदार",
       mistri: "ठेकेदार",
-      // Labour ke liye
       labour: "मज़दूर",
       lebar: "मज़दूर",
       mazdoor: "मज़दूर",
@@ -160,19 +147,15 @@ const getLabours = async (req, res) => {
     let mappedSearch = search;
     let mappedSkill = skill;
 
-    // 🔴 2. Agar client ne search bar me hinglish daali hai, toh check karein
     if (search && keywordMap[search.toLowerCase().trim()]) {
       mappedSearch = keywordMap[search.toLowerCase().trim()];
     }
-
-    // 🔴 3. Agar dropdown/skill filter me kuch alag aaya hai
     if (skill && keywordMap[skill.toLowerCase().trim()]) {
       mappedSkill = keywordMap[skill.toLowerCase().trim()];
     }
 
     let query = `
-      SELECT 
-        *, 
+      SELECT *, 
         COALESCE((SELECT ROUND(AVG(rating), 1) FROM reviews WHERE reviews.labour_id::text = labours.id::text), 0.0) AS average_rating,
         (SELECT COUNT(*) FROM reviews WHERE reviews.labour_id::text = labours.id::text) AS total_reviews
       FROM labours 
@@ -187,7 +170,6 @@ const getLabours = async (req, res) => {
       valueIndex++;
     }
 
-    // 🔴 4. Mapped Search term ka use SQL Query me karein
     if (mappedSearch) {
       query += ` AND (name ILIKE $${valueIndex} OR location ILIKE $${valueIndex} OR area ILIKE $${valueIndex} OR skill ILIKE $${valueIndex})`;
       values.push(`%${mappedSearch}%`);
@@ -212,18 +194,16 @@ const getLabours = async (req, res) => {
   }
 };
 
-// 👇👇👇👇 नया विज्ञापन पोस्ट और नोटिफिकेशन भेजने का फंक्शन 👇👇👇👇
+// 3. नया विज्ञापन पोस्ट और नोटिफिकेशन भेजने का फंक्शन
 const postJobAndNotify = async (req, res) => {
   const { customer_phone, skill_needed, area, city, description } = req.body;
 
   try {
-    // 1. विज्ञापन को डेटाबेस में सेव करें
     await db.query(
       "INSERT INTO jobs (customer_phone, skill_needed, area, city, description) VALUES ($1, $2, $3, $4, $5)",
-      [customer_phone, skill_needed, area, city, description], // 5 वैल्यूज पूरी होनी चाहिए
+      [customer_phone, skill_needed, area, city, description],
     );
 
-    // 2. उस शहर, इलाके और स्किल वाले सभी वेरीफाइड कारीगरों के FCM टोकन निकालें
     const workerResult = await db.query(
       "SELECT fcm_token FROM labours WHERE skill = $1 AND city ILIKE $2 AND is_verified = true",
       [skill_needed, `%${city}%`],
@@ -233,17 +213,14 @@ const postJobAndNotify = async (req, res) => {
       .map((row) => row.fcm_token)
       .filter((t) => t != null);
 
-    // 3. अगर कारीगरों के टोकन मिलते हैं, तो फ़ायरबेस से नोटिफिकेशन भेजें
     if (tokens.length > 0) {
       const message = {
         notification: {
           title: `🎯 आपके इलाके (${area}) में नया काम!`,
-          body: `${skill_needed} की ज़रूरत है: ${description}`,
+          body: `${skill_needed} की ज़रूरत है: ${description}`,
         },
         tokens: tokens,
       };
-      // ध्यान दें: इसके लिए आपके बैकएंड में firebase-admin सेटअप होना ज़रूरी है
-      // await admin.messaging().sendEachForMulticast(message);
       console.log("Notification sent to tokens:", tokens);
     }
 
@@ -260,7 +237,7 @@ const postJobAndNotify = async (req, res) => {
   }
 };
 
-// 3. [VERIFICATION CHECK OPTION] - Admin ke liye pending list dekhna
+// 4. Admin ke liye pending list dekhna
 const getPendingLabours = async (req, res) => {
   try {
     const result = await db.query(
@@ -275,7 +252,7 @@ const getPendingLabours = async (req, res) => {
   }
 };
 
-// 4. [APPROVE LOGIC] - Kariagar ko verify (Active) karna
+// 5. Kariagar ko verify (Active) karna
 const verifyLabour = async (req, res) => {
   const { id } = req.params;
   try {
@@ -291,13 +268,12 @@ const verifyLabour = async (req, res) => {
   }
 };
 
-// 5. [REJECT LOGIC] - नकली या गलत फॉर्म को डिलीट करना
+// 6. नकली या गलत फॉर्म को डिलीट करना
 const rejectLabour = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body; // एडमिन जो कारण टाइप करेगा
+    const { reason } = req.body;
 
-    // कारीगर को डिलीट करने के बजाय उसका status 'rejected' कर दें और कारण सेव कर दें
     const result = await db.query(
       "UPDATE labours SET status = 'rejected', reject_reason = $1 WHERE id = $2 RETURNING *",
       [reason, id],
@@ -318,41 +294,28 @@ const rejectLabour = async (req, res) => {
   }
 };
 
-// 6. [LABOUR LOGIN] - कारीगर का लॉगिन और स्टेटस चेक करना
+// 7. [LABOUR LOGIN] - सिर्फ फोन नंबर चेक करेगा (पिन की ज़रूरत नहीं)
 const labourLogin = async (req, res) => {
-  const { phone, pin } = req.body; // 🔴 पिन भी स्वीकार करें
+  const { phone } = req.body;
   try {
     const query = `
-      SELECT 
-        l.*, 
+      SELECT l.*, 
         COALESCE(ROUND(AVG(r.rating), 1), 0.0) AS average_rating, 
         COUNT(r.id) AS total_reviews
       FROM labours l 
       LEFT JOIN reviews r ON l.id = r.labour_id
       WHERE l.phone = $1
       GROUP BY l.id
-      ORDER BY l.created_at DESC   -- 🔴 यह सबसे नया अकाउंट पहले लाएगा
-      LIMIT 1                      -- 🔴 यह सिर्फ एक ही (सबसे सही) अकाउंट ऐप को भेजेगा
+      ORDER BY l.created_at DESC 
+      LIMIT 1 
     `;
 
     const result = await db.query(query, [phone]);
-    console.log("Phone:", phone);
-    console.log("User PIN:", pin);
-    console.log("DB PIN:", result.rows[0]?.pin);
-    console.log("Full Data:", result.rows[0]);
 
     if (result.rows.length === 0) {
       return res
         .status(404)
         .json({ success: false, message: "यह नंबर रजिस्टर्ड नहीं है।" });
-    }
-
-    // 🔴 सुरक्षा जाँच: चेक करें कि डेटाबेस का पिन और यूज़र का पिन मैच करता है या नहीं
-    if (String(result.rows[0].pin).trim() !== String(pin).trim()) {
-      return res.status(401).json({
-        success: false,
-        message: "गलत सीक्रेट पिन! कृपया सही पिन डालें। ❌",
-      });
     }
 
     res.status(200).json({
@@ -366,11 +329,11 @@ const labourLogin = async (req, res) => {
   }
 };
 
+// 8. Search Labours
 const searchLabours = async (req, res) => {
   try {
-    const { query: searchQuery } = req.query; // ग्राहक जो शहर/एरिया सर्च करेगा
+    const { query: searchQuery } = req.query;
 
-    // अगर ग्राहक ने कुछ नहीं लिखा है, तो सारे वेरीफाइड कारीगर दिखा दो
     if (!searchQuery) {
       const result = await db.query(
         "SELECT * FROM labours WHERE status = 'verified'",
@@ -378,7 +341,6 @@ const searchLabours = async (req, res) => {
       return res.status(200).json({ success: true, data: result.rows });
     }
 
-    // अगर सर्च में कुछ लिखा है, तो 'address' कॉलम में उसे ढूँढो (ILIKE का इस्तेमाल करके)
     const result = await db.query(
       "SELECT * FROM labours WHERE status = 'verified' AND address ILIKE $1",
       [`%${searchQuery}%`],
@@ -391,13 +353,12 @@ const searchLabours = async (req, res) => {
   }
 };
 
+// 9. Edit Labour Profile
 const editLabourProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    // 🔴 city और area को भी निकालें
     const { name, phone, skill, address, city, area } = req.body;
 
-    // 🔴 SQL क्वेरी में city और area को भी अपडेट करें
     const result = await db.query(
       "UPDATE labours SET name = $1, phone = $2, skill = $3, address = $4, city = $5, area = $6 WHERE id = $7 RETURNING *",
       [name, phone, skill, address, city, area, id],
@@ -420,7 +381,7 @@ const editLabourProfile = async (req, res) => {
   }
 };
 
-// 1. ग्राहक द्वारा दिया गया रिव्यू डेटाबेस में सेव करना
+// 10. Review Add Karna
 const addReview = async (req, res) => {
   try {
     const { labour_id, customer_name, rating, comment } = req.body;
@@ -428,7 +389,7 @@ const addReview = async (req, res) => {
     if (!labour_id || !rating) {
       return res
         .status(400)
-        .json({ success: false, message: "कारीगर ID और रेटिंग ज़रूरी है!" });
+        .json({ success: false, message: "कारीगर ID और रेटिंग ज़रूरी है!" });
     }
 
     const result = await db.query(
@@ -447,18 +408,16 @@ const addReview = async (req, res) => {
   }
 };
 
-// 2. किसी एक कारीगर के सारे रिव्यू और उसकी एवरेज रेटिंग निकालना
+// 11. Review Get Karna
 const getLabourReviews = async (req, res) => {
   try {
     const { labour_id } = req.params;
 
-    // सारे रिव्यू निकालना
     const reviewsResult = await db.query(
       "SELECT * FROM reviews WHERE labour_id = $1 ORDER BY created_at DESC",
       [labour_id],
     );
 
-    // एवरेज रेटिंग की गणना करना
     const avgResult = await db.query(
       "SELECT AVG(rating) as average_rating, COUNT(id) as total_reviews FROM reviews WHERE labour_id = $1",
       [labour_id],
@@ -478,7 +437,7 @@ const getLabourReviews = async (req, res) => {
   }
 };
 
-// सबसे नीचे वाले module.exports को बदलकर उसमें rejectLabour भी जोड़ दें:
+// 🔴 सभी फंक्शन्स को सही तरीके से एक्सपोर्ट करना (यहाँ कोई राउटर नहीं आएगा)
 module.exports = {
   addLabour,
   getLabours,
