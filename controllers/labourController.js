@@ -336,6 +336,10 @@ const labourLogin = async (req, res) => {
     `;
 
     const result = await db.query(query, [phone]);
+    console.log("Phone:", phone);
+    console.log("User PIN:", pin);
+    console.log("DB PIN:", result.rows[0]?.pin);
+    console.log("Full Data:", result.rows[0]);
 
     if (result.rows.length === 0) {
       return res
