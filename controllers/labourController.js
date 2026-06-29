@@ -344,7 +344,7 @@ const labourLogin = async (req, res) => {
     }
 
     // 🔴 सुरक्षा जाँच: चेक करें कि डेटाबेस का पिन और यूज़र का पिन मैच करता है या नहीं
-    if (String(result.rows[0].pin) !== String(pin)) {
+    if (String(result.rows[0].pin).trim() !== String(pin).trim()) {
       return res.status(401).json({
         success: false,
         message: "गलत सीक्रेट पिन! कृपया सही पिन डालें। ❌",
