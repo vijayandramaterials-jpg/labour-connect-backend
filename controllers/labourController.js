@@ -297,6 +297,7 @@ const rejectLabour = async (req, res) => {
 // 7. [LABOUR LOGIN] - सिर्फ फोन नंबर चेक करेगा (पिन की ज़रूरत नहीं)
 const labourLogin = async (req, res) => {
   const { phone } = req.body;
+
   try {
     const query = `
       SELECT l.*, 
@@ -312,12 +313,15 @@ const labourLogin = async (req, res) => {
 
     const result = await db.query(query, [phone]);
 
+    // अगर नंबर डेटाबेस में नहीं है, तो साफ एरर भेजें ताकि Flutter यूजर को रजिस्टर करने बोले
     if (result.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "यह नंबर रजिस्टर्ड नहीं है।" });
+      return res.status(404).json({
+        success: false,
+        message: "यह नंबर रजिस्टर्ड नहीं है। कृपया पहले नया अकाउंट बनाएं।",
+      });
     }
 
+    // अगर नंबर मिल गया, तो डेटा भेज दें
     res.status(200).json({
       success: true,
       message: "लॉगिन सफल!",
@@ -325,7 +329,10 @@ const labourLogin = async (req, res) => {
     });
   } catch (error) {
     console.error("Labour Login Error:", error);
-    res.status(500).json({ success: false, message: "सर्वर एरर।" });
+    res.status(500).json({
+      success: false,
+      message: "सर्वर में खराबी है, कृपया थोड़ी देर बाद प्रयास करें।",
+    });
   }
 };
 
