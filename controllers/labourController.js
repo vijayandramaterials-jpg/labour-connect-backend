@@ -220,7 +220,7 @@ const postJobAndNotify = async (req, res) => {
     // 1. विज्ञापन को डेटाबेस में सेव करें
     await db.query(
       "INSERT INTO jobs (customer_phone, skill_needed, area, city, description) VALUES ($1, $2, $3, $4, $5)",
-      [customer_phone, area, city, description],
+      [customer_phone, skill_needed, area, city, description], // 5 वैल्यूज पूरी होनी चाहिए
     );
 
     // 2. उस शहर, इलाके और स्किल वाले सभी वेरीफाइड कारीगरों के FCM टोकन निकालें
@@ -390,12 +390,13 @@ const searchLabours = async (req, res) => {
 const editLabourProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, skill, address } = req.body;
+    // 🔴 city और area को भी निकालें
+    const { name, phone, skill, address, city, area } = req.body;
 
-    // कारीगर का नया डेटा अपडेट करें
+    // 🔴 SQL क्वेरी में city और area को भी अपडेट करें
     const result = await db.query(
-      "UPDATE labours SET name = $1, phone = $2, skill = $3, address = $4 WHERE id = $5 RETURNING *",
-      [name, phone, skill, address, id],
+      "UPDATE labours SET name = $1, phone = $2, skill = $3, address = $4, city = $5, area = $6 WHERE id = $7 RETURNING *",
+      [name, phone, skill, address, city, area, id],
     );
 
     if (result.rows.length === 0) {
