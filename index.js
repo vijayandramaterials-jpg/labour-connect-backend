@@ -17,6 +17,7 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/labours", require("./routes/labourRoutes"));
 app.use("/api/notifications", notificationRoutes); // 🔴 2. नोटिफिकेशन का रूट यहाँ जोड़ दिया
 app.use("/api/customers", require("./routes/customerRoutes"));
+app.use("/api/support", require("./routes/supportRoutes"));
 
 // ==========================================
 // --- PHONEPE COMPLIANCE ROUTES (POLICIES) ---
