@@ -3,16 +3,21 @@ const router = express.Router();
 
 const {
   createOrder,
-  savePurchase,
   getUnlockedContacts,
-  razorpayWebhook, // 🔴 इसे इम्पोर्ट में जोड़ें
+  phonepeCallback,
+  savePurchase,
 } = require("../controllers/paymentController");
 
+// फ्रंटएंड से पेमेंट रिक्वेस्ट के लिए
 router.post("/create-order", createOrder);
-router.post("/save-purchase", savePurchase);
+
+// ऐप लोड होने पर अनलॉक कॉन्टैक्ट्स चेक करने के लिए
 router.get("/unlocked-contacts/:phone", getUnlockedContacts);
 
-// 🔴 Webhook का नया रूट (यहाँ Razorpay डेटा भेजेगा)
-router.post("/webhook", razorpayWebhook);
+// बैकएंड मैन्युअल एंट्री बैकअप के लिए (यदि आवश्यक हो)
+router.post("/save-purchase", savePurchase);
+
+// PhonePe पेमेंट पूरा होने के बाद इस रूट पर रिस्पॉन्स भेजेगा
+router.post("/phonepe-callback", phonepeCallback);
 
 module.exports = router;
