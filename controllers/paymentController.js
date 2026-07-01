@@ -35,10 +35,25 @@ const createOrder = async (req, res) => {
     }
 
     const merchantTransactionId = "TXN" + Date.now();
-    const serverPort = process.env.PORT || 5000;
 
+    // 🎯 डिफ़ॉल्ट रूप से वर्किंग यूनिवर्सल टेस्ट कीज़ सेट कर रहे हैं ताकि कैशे का झंझट न रहे
+    let merchantId = "PGTESTPAYUAT";
+    let saltKey = "099eb0cd-02cf-4e2a-8aca-396474f67a21";
+    let saltIndex = "1";
+    let host = "api-uat.phonepe.com";
+
+    // 🚀 जब आपका KYC अप्रूव हो जाएगा और आप Render पर ENVIRONMENT को PRODUCTION कर देंगे,
+    // तब यह अपने आप आपके डैशबोर्ड की असली लाइव चाबियाँ उठा लेगा।
+    if (process.env.PHONEPE_ENV === "PRODUCTION") {
+      merchantId = process.env.PHONEPE_MERCHANT_ID;
+      saltKey = process.env.PHONEPE_SALT_KEY;
+      saltIndex = process.env.PHONEPE_SALT_INDEX || "1";
+      host = "api.phonepe.com";
+    }
+
+    // PhonePe का पे-लोड स्ट्रक्चर
     const payload = {
-      merchantId: process.env.PHONEPE_MERCHANT_ID,
+      merchantId: merchantId,
       merchantTransactionId: merchantTransactionId,
       merchantUserId: "MUID" + customer_phone,
       amount: amount,
@@ -53,20 +68,15 @@ const createOrder = async (req, res) => {
       "base64",
     );
 
-    const stringToHash =
-      base64Payload + "/pg/v1/pay" + process.env.PHONEPE_SALT_KEY;
+    // SHA256 सिग्नेचर जनरेशन
+    const stringToHash = base64Payload + "/pg/v1/pay" + saltKey;
     const sha256 = crypto
       .createHash("sha256")
       .update(stringToHash)
       .digest("hex");
-    const xVerify = sha256 + "###" + process.env.PHONEPE_SALT_INDEX;
+    const xVerify = sha256 + "###" + saltIndex;
 
     const postData = JSON.stringify({ request: base64Payload });
-
-    const host =
-      process.env.PHONEPE_ENV === "UAT"
-        ? "api-uat.phonepe.com"
-        : "api.phonepe.com";
     const path = "/apis/hermes/pg/v1/pay";
 
     const options = {
@@ -80,7 +90,7 @@ const createOrder = async (req, res) => {
       },
     };
 
-    // 🔥 सुधार: job_metadata को सीधे ऑब्जेक्ट के रूप में भेजा (बिना JSON.stringify के) ताकि JSONB एरर न आए
+    // डेटाबेस में टेम्परेरी एंट्री सुरक्षित करना
     await db.query(
       "INSERT INTO phonepe_transactions (txn_id, customer_phone, type, target_id, amount, job_metadata) VALUES ($1, $2, $3, $4, $5, $6)",
       [
@@ -93,6 +103,7 @@ const createOrder = async (req, res) => {
       ],
     );
 
+    // आउटगोइंग HTTPS रिक्वेस्ट
     const request = https.request(options, (response) => {
       let body = "";
       response.on("data", (chunk) => (body += chunk));
@@ -100,12 +111,8 @@ const createOrder = async (req, res) => {
         try {
           const resData = JSON.parse(body);
 
-          // 📢 ये लॉग्स आपको रेंडर पर PhonePe का असली स्टेटस दिखाएंगे
-          console.log(
-            "--- PhonePe API Response Status Code ---:",
-            response.statusCode,
-          );
-          console.log("--- PhonePe API Response Body ---:", resData);
+          console.log("--- Live PhonePe API Status ---:", response.statusCode);
+          console.log("--- Live PhonePe API Response ---:", resData);
 
           if (
             resData.success &&
@@ -117,31 +124,30 @@ const createOrder = async (req, res) => {
               url: resData.data.instrumentResponse.redirectUrl,
             });
           } else {
-            // अगर PhonePe मना करता है तो उसका असली रीजन फ्रंटएंड को भेजें
             res.status(500).json({
               success: false,
-              message:
-                resData.message || "PhonePe गेटवे से लिंक नहीं मिल पाया।",
+              message: resData.message || "PhonePe गेटवे एरर",
             });
           }
         } catch (e) {
-          console.error("JSON Parsing Error from PhonePe:", body);
-          res.status(500).json({ success: false, message: "पार्सिंग एरर" });
+          res
+            .status(500)
+            .json({ success: false, message: "रिस्पॉन्स पार्सिंग एरर" });
         }
       });
     });
 
     request.on("error", (error) => {
-      console.error("PhonePe https connection error:", error);
+      console.error("PhonePe Connection Error:", error);
       res
         .status(500)
-        .json({ success: false, message: "PhonePe API कनेक्शन फेल" });
+        .json({ success: false, message: "PhonePe सर्वर से कनेक्शन फेल" });
     });
 
     request.write(postData);
     request.end();
   } catch (error) {
-    console.error("Create Order Error:", error);
+    console.error("Create Order Runtime Error:", error);
     res.status(500).json({ success: false, message: "सर्वर इंटरनल एरर" });
   }
 };
