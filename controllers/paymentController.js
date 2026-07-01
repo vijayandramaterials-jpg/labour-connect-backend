@@ -2,7 +2,7 @@ const db = require("../config/db");
 const crypto = require("crypto");
 const https = require("https");
 
-// टेबल ऑटो-क्रिएशन लॉजिक ताकि पेमेंट का टाइप और विवरण सेव रह सके
+// टेबल ऑटो-क्रिएशन लॉजिक
 const initPaymentTable = async () => {
   try {
     await db.query(`
@@ -37,12 +37,11 @@ const createOrder = async (req, res) => {
     const merchantTransactionId = "TXN" + Date.now();
     const serverPort = process.env.PORT || 5000;
 
-    // PhonePe पे-लोड डिक्शनरी
     const payload = {
       merchantId: process.env.PHONEPE_MERCHANT_ID,
       merchantTransactionId: merchantTransactionId,
       merchantUserId: "MUID" + customer_phone,
-      amount: amount, // पैसे में (₹29 = 2900, ₹49 = 4900)
+      amount: amount,
       redirectUrl: `https://labour-connect-backend-p25h.onrender.com/api/payment/phonepe-callback`,
       redirectMode: "POST",
       callbackUrl: `https://labour-connect-backend-p25h.onrender.com/api/payment/phonepe-callback`,
@@ -54,7 +53,6 @@ const createOrder = async (req, res) => {
       "base64",
     );
 
-    // SHA256 हैश (X-VERIFY Header) जेनरेट करना
     const stringToHash =
       base64Payload + "/pg/v1/pay" + process.env.PHONEPE_SALT_KEY;
     const sha256 = crypto
@@ -65,7 +63,6 @@ const createOrder = async (req, res) => {
 
     const postData = JSON.stringify({ request: base64Payload });
 
-    // टेस्ट मोड (UAT) या लाइव URL का चयन
     const host =
       process.env.PHONEPE_ENV === "UAT"
         ? "api-uat.phonepe.com"
@@ -83,7 +80,7 @@ const createOrder = async (req, res) => {
       },
     };
 
-    // टेम्परेरी ट्रांजैक्शन को डेटाबेस में ट्रैक करना
+    // 🔥 सुधार: job_metadata को सीधे ऑब्जेक्ट के रूप में भेजा (बिना JSON.stringify के) ताकि JSONB एरर न आए
     await db.query(
       "INSERT INTO phonepe_transactions (txn_id, customer_phone, type, target_id, amount, job_metadata) VALUES ($1, $2, $3, $4, $5, $6)",
       [
@@ -92,17 +89,24 @@ const createOrder = async (req, res) => {
         type,
         target_id || null,
         amount,
-        job_metadata ? JSON.stringify(job_metadata) : null,
+        job_metadata || null,
       ],
     );
 
-    // नेटिव HTTPS आउटगोइंग रिक्वेस्ट कॉल
     const request = https.request(options, (response) => {
       let body = "";
       response.on("data", (chunk) => (body += chunk));
       response.on("end", () => {
         try {
           const resData = JSON.parse(body);
+
+          // 📢 ये लॉग्स आपको रेंडर पर PhonePe का असली स्टेटस दिखाएंगे
+          console.log(
+            "--- PhonePe API Response Status Code ---:",
+            response.statusCode,
+          );
+          console.log("--- PhonePe API Response Body ---:", resData);
+
           if (
             resData.success &&
             resData.data &&
@@ -113,19 +117,22 @@ const createOrder = async (req, res) => {
               url: resData.data.instrumentResponse.redirectUrl,
             });
           } else {
+            // अगर PhonePe मना करता है तो उसका असली रीजन फ्रंटएंड को भेजें
             res.status(500).json({
               success: false,
-              message: "PhonePe गेटवे से लिंक नहीं मिल पाया।",
+              message:
+                resData.message || "PhonePe गेटवे से लिंक नहीं मिल पाया।",
             });
           }
         } catch (e) {
+          console.error("JSON Parsing Error from PhonePe:", body);
           res.status(500).json({ success: false, message: "पार्सिंग एरर" });
         }
       });
     });
 
     request.on("error", (error) => {
-      console.error("PhonePe https error:", error);
+      console.error("PhonePe https connection error:", error);
       res
         .status(500)
         .json({ success: false, message: "PhonePe API कनेक्शन फेल" });
@@ -135,18 +142,17 @@ const createOrder = async (req, res) => {
     request.end();
   } catch (error) {
     console.error("Create Order Error:", error);
-    res.status(500).json({ success: false, message: "सर्वर एरer" });
+    res.status(500).json({ success: false, message: "सर्वर इंटरनल एरर" });
   }
 };
 
-// 2. पेमेंट वेरिफिकेशन, लॉक खोलना और विज्ञापन ब्रॉडकास्ट लॉजिक (Callback)
+// 2. फोनपे कॉल-बैक हैंडलर
 const phonepeCallback = async (req, res) => {
   try {
-    // PhonePe फ़ॉर्म-डेटा या JSON दोनों रूपों में रिस्पॉन्स भेज सकता है
     const { merchantId, transactionId, code } = req.body;
+    console.log(`Callback Received for TXN: ${transactionId}, Status: ${code}`);
 
     if (code === "PAYMENT_SUCCESS") {
-      // डेटाबेस से ट्रांजैक्शन की इनफार्मेशन निकालें
       const txCheck = await db.query(
         "SELECT * FROM phonepe_transactions WHERE txn_id = $1",
         [transactionId],
@@ -155,13 +161,11 @@ const phonepeCallback = async (req, res) => {
       if (txCheck.rows.length > 0 && txCheck.rows[0].status === "PENDING") {
         const txn = txCheck.rows[0];
 
-        // स्थिति को तुरंत SUCCESS में अपडेट करें ताकि डुप्लीकेट रिक्वेस्ट न चले
         await db.query(
           "UPDATE phonepe_transactions SET status = 'SUCCESS' WHERE txn_id = $1",
           [transactionId],
         );
 
-        // 🔥 केस A: अगर पेमेंट कारीगर का नंबर अनलॉक (UNLOCK) करने के लिए था
         if (txn.type === "UNLOCK") {
           const formattedLabourId = parseInt(txn.target_id, 10);
           const expiresAt = new Date();
@@ -171,17 +175,10 @@ const phonepeCallback = async (req, res) => {
             "INSERT INTO purchased_contacts (customer_phone, labour_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             [txn.customer_phone, formattedLabourId, expiresAt],
           );
-          console.log(
-            `[PhonePe Success] Number unlocked for phone ${txn.customer_phone}`,
-          );
-        }
-
-        // 🔥 केस B: अगर पेमेंट काम का विज्ञापन (ADVERTISEMENT) पोस्ट करने के लिए था
-        else if (txn.type === "ADVERTISEMENT" && txn.job_metadata) {
+        } else if (txn.type === "ADVERTISEMENT" && txn.job_metadata) {
           const job = txn.job_metadata;
           const serverPort = process.env.PORT || 5000;
 
-          // बिना किसी तुक्के के आपके बैकएंड के अपने खुद के विज्ञापन ब्रॉडकास्ट API को इंटरनली कॉल करना
           const internalPostData = JSON.stringify({
             customer_phone: txn.customer_phone,
             skill_needed: job.skill_needed,
@@ -203,18 +200,17 @@ const phonepeCallback = async (req, res) => {
 
           const internalReq = https.request(internalOptions, (internalRes) => {
             console.log(
-              `[PhonePe AD Broadcast] Internal status received: ${internalRes.statusCode}`,
+              `[PhonePe AD] Broadcast API status: ${internalRes.statusCode}`,
             );
           });
           internalReq.on("error", (err) =>
-            console.error("Internal broadcast trigger failed:", err),
+            console.error("Internal broadcast failed:", err),
           );
           internalReq.write(internalPostData);
           internalReq.end();
         }
       }
 
-      // यूजर को ब्राउज़र स्क्रीन पर एक सुंदर सक्सेस मैसेज दिखाएं
       return res.send(`
         <html>
           <body style="font-family:sans-serif; text-align:center; padding-top:50px; background:#f4f9f4;">
@@ -232,8 +228,7 @@ const phonepeCallback = async (req, res) => {
           <body style="font-family:sans-serif; text-align:center; padding-top:50px; background:#f9f4f4;">
             <div style="background:white; padding:30px; border-radius:8px; display:inline-block; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
               <h1 style="color:#e74c3c;">भुगतान विफल! ❌</h1>
-              <p style="font-size:16px; color:#555;">आपका भुगतान पूरा नहीं हो सका या रद्द कर दिया गया है।</p>
-              <p style="font-weight:bold; color:#333;">कृपया ऐप में जाकर दोबारा प्रयास करें।</p>
+              <p style="font-size:16px; color:#555;">आपका भुगतान पूरा नहीं हो सका।</p>
             </div>
           </body>
         </html>
@@ -245,7 +240,7 @@ const phonepeCallback = async (req, res) => {
   }
 };
 
-// 3. ऐप लोड होने पर एक्टिवेशन स्टेटस चेक करने का ओरिजिनल लॉजिक (Unchanged)
+// 3. अनलॉक कॉन्टैक्ट्स की लिस्ट लाना
 const getUnlockedContacts = async (req, res) => {
   const phone = req.params.phone;
   try {
@@ -263,7 +258,7 @@ const getUnlockedContacts = async (req, res) => {
   }
 };
 
-// 4. मैन्युअल एंट्री बैकअप (Unchanged)
+// 4. मैन्युअल परचेज सेव (बैकअप)
 const savePurchase = async (req, res) => {
   const { customer_phone, labour_id } = req.body;
   if (!customer_phone || !labour_id) {
