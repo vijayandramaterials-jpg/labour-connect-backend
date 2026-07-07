@@ -184,6 +184,8 @@ const phonepeCallback = async (req, res) => {
             skill_needed: job.skill_needed,
             area: job.area,
             city: job.city,
+            state: job.state,
+            scope: job.scope,
             description: job.description,
           });
 
@@ -198,7 +200,7 @@ const phonepeCallback = async (req, res) => {
             },
           };
 
-          const internalReq = https.request(internalOptions, (internalRes) => {
+          const internalReq = http.request(internalOptions, (internalRes) => {
             console.log(
               `[PhonePe AD] Broadcast API status: ${internalRes.statusCode}`,
             );

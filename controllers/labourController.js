@@ -206,33 +206,97 @@ const getLabours = async (req, res) => {
 
 // 3. नया विज्ञापन पोस्ट और नोटिफिकेशन भेजने का फंक्शन
 const postJobAndNotify = async (req, res) => {
-  const { customer_phone, skill_needed, area, city, description } = req.body;
+  const {
+    customer_phone,
+    skill_needed,
+    area,
+    city,
+    state,
+    scope,
+    description,
+  } = req.body;
 
   try {
     await db.query(
-      "INSERT INTO jobs (customer_phone, skill_needed, area, city, description) VALUES ($1, $2, $3, $4, $5)",
-      [customer_phone, skill_needed, area, city, description],
+      `INSERT INTO jobs
+  (customer_phone, skill_needed, area, city, state, scope, description)
+  VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [customer_phone, skill_needed, area, city, state, scope, description],
     );
 
-    const workerResult = await db.query(
-      "SELECT fcm_token FROM labours WHERE skill = $1 AND city ILIKE $2 AND is_verified = true",
-      [skill_needed, `%${city}%`],
-    );
+    let sql = "";
+    let params = [];
+
+    switch (scope) {
+      case "AREA":
+        sql = `
+      SELECT fcm_token
+      FROM labours
+      WHERE skill=$1
+      AND state ILIKE $2
+      AND city ILIKE $3
+      AND area ILIKE $4
+      AND is_verified=true
+    `;
+
+        params = [skill_needed, `%${state}%`, `%${city}%`, `%${area}%`];
+        break;
+
+      case "CITY":
+        sql = `
+      SELECT fcm_token
+      FROM labours
+      WHERE skill=$1
+      AND state ILIKE $2
+      AND city ILIKE $3
+      AND is_verified=true
+    `;
+
+        params = [skill_needed, `%${state}%`, `%${city}%`];
+        break;
+
+      case "STATE":
+        sql = `
+      SELECT fcm_token
+      FROM labours
+      WHERE skill=$1
+      AND state ILIKE $2
+      AND is_verified=true
+    `;
+
+        params = [skill_needed, `%${state}%`];
+        break;
+
+      case "ALL_INDIA":
+        sql = `
+      SELECT fcm_token
+      FROM labours
+      WHERE skill=$1
+      AND is_verified=true
+    `;
+
+        params = [skill_needed];
+        break;
+
+      default:
+        sql = `
+      SELECT fcm_token
+      FROM labours
+      WHERE skill=$1
+      AND city ILIKE $2
+      AND is_verified=true
+    `;
+
+        params = [skill_needed, `%${city}%`];
+    }
+
+    const workerResult = await db.query(sql, params);
 
     const tokens = workerResult.rows
       .map((row) => row.fcm_token)
-      .filter((t) => t != null);
+      .filter((t) => t);
 
-    if (tokens.length > 0) {
-      const message = {
-        notification: {
-          title: `🎯 आपके इलाके (${area}) में नया काम!`,
-          body: `${skill_needed} की ज़रूरत है: ${description}`,
-        },
-        tokens: tokens,
-      };
-      console.log("Notification sent to tokens:", tokens);
-    }
+    console.log("Notification Tokens:", tokens);
 
     res.status(201).json({
       success: true,
