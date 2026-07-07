@@ -108,6 +108,7 @@ const addLabour = async (req, res) => {
 
 // 2. Sirf Verified (Active) Kariagaron ko App par dikhana
 const getLabours = async (req, res) => {
+  console.log("===== GET /api/labours HIT =====");
   try {
     const { search, skill, city, area } = req.query;
 
@@ -185,7 +186,16 @@ const getLabours = async (req, res) => {
     query += " ORDER BY created_at DESC";
 
     const result = await db.query(query, values);
-    res.json({ success: true, data: result.rows });
+
+    console.log("========== GET LABOURS ==========");
+    console.log("Request Query:", req.query);
+    console.log("Rows Found:", result.rows.length);
+    console.log(result.rows);
+
+    res.json({
+      success: true,
+      data: result.rows,
+    });
   } catch (error) {
     console.error("Fetch Labours Error:", error);
     res
