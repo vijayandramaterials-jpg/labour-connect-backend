@@ -38,7 +38,7 @@ exports.registerCustomer = async (req, res) => {
       .select("*")
       .eq("phone", phone)
       .single();
-    
+
     if (searchError && searchError.code !== "PGRST116") {
       console.error("Search Error:", searchError);
       throw searchError;
