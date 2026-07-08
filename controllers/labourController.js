@@ -1,5 +1,6 @@
 const db = require("../config/db");
 const { createClient } = require("@supabase/supabase-js");
+const admin = require("../config/firebase");
 
 // Supabase client initialize karein storage ke liye
 const supabase = createClient(
@@ -35,6 +36,9 @@ const addLabour = async (req, res) => {
     aadhaar_number,
     city,
     area,
+    state,
+    latitude,
+    longitude,
   } = req.body;
 
   try {
@@ -70,11 +74,24 @@ const addLabour = async (req, res) => {
     // 🔴 पिन कॉलम हटा दिया गया है
     const query = `
       INSERT INTO labours (
-        name, phone, skill, daily_wage, location, aadhaar_number, 
-        profile_photo_url, aadhaar_front_url, aadhaar_back_url, 
-        city, area
+        name,
+        phone,
+        skill,
+        daily_wage,
+        location,
+        aadhaar_number,
+        profile_photo_url,
+        aadhaar_front_url,
+        aadhaar_back_url,
+        city,
+        area,
+        state,
+        latitude,
+        longitude
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
+      VALUES (
+$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
+) 
       RETURNING *;
     `;
 
@@ -90,7 +107,20 @@ const addLabour = async (req, res) => {
       aadhaarBackUrl,
       city || "",
       area || "",
+      state || "",
+      latitude || null,
+      longitude || null,
     ];
+
+    console.log("========== Labour GPS ==========");
+    console.log({
+      state,
+      city,
+      area,
+      latitude,
+      longitude,
+    });
+    console.log("================================");
 
     const result = await db.query(query, values);
 
@@ -251,6 +281,8 @@ const postJobAndNotify = async (req, res) => {
     city,
     state,
     scope,
+    radius,
+    urgent,
     description,
   } = req.body;
 
@@ -333,6 +365,42 @@ const postJobAndNotify = async (req, res) => {
     const tokens = workerResult.rows
       .map((row) => row.fcm_token)
       .filter((t) => t);
+
+    if (tokens.length > 0) {
+      const message = {
+        notification: {
+          title: urgent ? "🚨 तुरंत कारीगर चाहिए!" : "📢 नया काम उपलब्ध",
+
+          body: urgent
+            ? `${skill_needed} की तुरंत आवश्यकता है`
+            : `${skill_needed} के लिए नया काम उपलब्ध है`,
+        },
+
+        data: {
+          type: "JOB",
+
+          skill: skill_needed,
+
+          city: city,
+
+          area: area,
+
+          state: state,
+
+          scope: scope,
+
+          radius: radius.toString(),
+
+          description: description,
+        },
+
+        tokens: tokens,
+      };
+
+      const response = await admin.messaging().sendEachForMulticast(message);
+
+      console.log(response);
+    }
 
     console.log("Notification Tokens:", tokens);
 
