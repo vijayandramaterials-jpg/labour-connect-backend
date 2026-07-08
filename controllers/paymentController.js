@@ -1,6 +1,61 @@
 const db = require("../config/db");
 const crypto = require("crypto");
+const http = require("http");
 const https = require("https");
+// =======================================================
+// PhonePe Payment Status Verification
+// =======================================================
+
+const verifyPhonePePayment = async (merchantTransactionId) => {
+  return new Promise((resolve, reject) => {
+    const path = `/apis/hermes/pg/v1/status/${process.env.PHONEPE_MERCHANT_ID}/${merchantTransactionId}`;
+
+    const stringToHash = path + process.env.PHONEPE_SALT_KEY;
+
+    const sha256 = crypto
+      .createHash("sha256")
+      .update(stringToHash)
+      .digest("hex");
+
+    const xVerify = sha256 + "###" + process.env.PHONEPE_SALT_INDEX;
+
+    const host =
+      process.env.PHONEPE_ENV === "UAT"
+        ? "api-uat.phonepe.com"
+        : "api.phonepe.com";
+
+    const options = {
+      hostname: host,
+      path: path,
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "X-VERIFY": xVerify,
+        "X-MERCHANT-ID": process.env.PHONEPE_MERCHANT_ID,
+      },
+    };
+
+    const req = https.request(options, (response) => {
+      let body = "";
+
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+
+      response.on("end", () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    req.on("error", reject);
+
+    req.end();
+  });
+};
 
 // टेबल ऑटो-क्रिएशन लॉजिक
 const initPaymentTable = async () => {
@@ -153,18 +208,37 @@ const phonepeCallback = async (req, res) => {
     console.log(`Callback Received for TXN: ${transactionId}, Status: ${code}`);
 
     if (code === "PAYMENT_SUCCESS") {
+      const verifyResult = await verifyPhonePePayment(transactionId);
+
+      console.log("========== PhonePe Verify ==========");
+      console.log(JSON.stringify(verifyResult, null, 2));
+      console.log("====================================");
+      if (!verifyResult.success || verifyResult.code !== "PAYMENT_SUCCESS") {
+        console.log("❌ PhonePe Verification Failed");
+
+        return res.status(400).send("Payment Verification Failed");
+      }
+      if (!transactionId) {
+        return res.status(400).send("Invalid Transaction");
+      }
       const txCheck = await db.query(
         "SELECT * FROM phonepe_transactions WHERE txn_id = $1",
         [transactionId],
       );
 
+      if (txCheck.rows.length > 0 && txCheck.rows[0].status === "SUCCESS") {
+        console.log(`⚠️ Duplicate Callback Ignored : ${transactionId}`);
+        return res.send("Already Processed");
+      }
+
       if (txCheck.rows.length > 0 && txCheck.rows[0].status === "PENDING") {
         const txn = txCheck.rows[0];
 
         await db.query(
-          "UPDATE phonepe_transactions SET status = 'SUCCESS' WHERE txn_id = $1",
+          "UPDATE phonepe_transactions SET status = 'SUCCESS',verified_at=NOW() WHERE txn_id = $1",
           [transactionId],
         );
+        console.log(`💰 Payment Success : ${transactionId}`);
 
         if (txn.type === "UNLOCK") {
           const formattedLabourId = parseInt(txn.target_id, 10);
@@ -175,8 +249,20 @@ const phonepeCallback = async (req, res) => {
             "INSERT INTO purchased_contacts (customer_phone, labour_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             [txn.customer_phone, formattedLabourId, expiresAt],
           );
+          console.log(
+            `✅ Contact Unlocked: Customer=${txn.customer_phone}, Labour=${formattedLabourId}`,
+          );
         } else if (txn.type === "ADVERTISEMENT" && txn.job_metadata) {
           const job = txn.job_metadata;
+          console.log("========== Advertisement ==========");
+          console.log("Customer :", txn.customer_phone);
+          console.log("Skill    :", job.skill_needed);
+          console.log("Area     :", job.area);
+          console.log("City     :", job.city);
+          console.log("State    :", job.state);
+          console.log("Scope    :", job.scope);
+          console.log("Amount   :", txn.amount);
+          console.log("===================================");
           const serverPort = process.env.PORT || 5000;
 
           const internalPostData = JSON.stringify({
@@ -225,6 +311,7 @@ const phonepeCallback = async (req, res) => {
         </html>
       `);
     } else {
+      console.log(`❌ Payment Failed : ${transactionId} | Status : ${code}`);
       return res.send(`
         <html>
           <body style="font-family:sans-serif; text-align:center; padding-top:50px; background:#f9f4f4;">

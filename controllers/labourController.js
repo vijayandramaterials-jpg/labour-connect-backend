@@ -4,7 +4,7 @@ const { createClient } = require("@supabase/supabase-js");
 // Supabase client initialize karein storage ke liye
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
 );
 
 // Supabase Storage mein file upload karne ka helper function
@@ -110,7 +110,8 @@ const addLabour = async (req, res) => {
 const getLabours = async (req, res) => {
   console.log("===== GET /api/labours HIT =====");
   try {
-    const { search, skill, city, area } = req.query;
+    const { search, skill, city, area, latitude, longitude, radius } =
+      req.query;
 
     const keywordMap = {
       plumber: "प्लंबर",
@@ -186,6 +187,43 @@ const getLabours = async (req, res) => {
     query += " ORDER BY created_at DESC";
 
     const result = await db.query(query, values);
+    let rows = result.rows;
+
+    if (latitude && longitude) {
+      const toRad = (v) => (v * Math.PI) / 180;
+
+      rows = rows.map((labour) => {
+        if (!labour.latitude || !labour.longitude) {
+          labour.distance = 999999;
+          return labour;
+        }
+
+        const R = 6371;
+
+        const dLat = toRad(labour.latitude - parseFloat(latitude));
+
+        const dLon = toRad(labour.longitude - parseFloat(longitude));
+
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(toRad(parseFloat(latitude))) *
+            Math.cos(toRad(labour.latitude)) *
+            Math.sin(dLon / 2) *
+            Math.sin(dLon / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        labour.distance = Number((R * c).toFixed(2));
+
+        return labour;
+      });
+
+      rows.sort((a, b) => a.distance - b.distance);
+
+      if (radius) {
+        rows = rows.filter((x) => x.distance <= parseFloat(radius));
+      }
+    }
 
     console.log("========== GET LABOURS ==========");
     console.log("Request Query:", req.query);
@@ -194,7 +232,7 @@ const getLabours = async (req, res) => {
 
     res.json({
       success: true,
-      data: result.rows,
+      data: rows,
     });
   } catch (error) {
     console.error("Fetch Labours Error:", error);
