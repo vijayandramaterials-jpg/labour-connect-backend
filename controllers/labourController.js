@@ -1,6 +1,6 @@
 const db = require("../config/db");
 const { createClient } = require("@supabase/supabase-js");
-const admin = require("../config/firebase");
+const { getMessaging } = require("../config/firebase");
 
 // Supabase client initialize karein storage ke liye
 const supabase = createClient(
@@ -403,7 +403,7 @@ const postJobAndNotify = async (req, res) => {
         tokens: tokens,
       };
 
-      const response = await admin.messaging().sendEachForMulticast(message);
+      const response = await getMessaging().sendEachForMulticast(message);
 
       console.log(response);
     }
