@@ -143,6 +143,11 @@ const getLabours = async (req, res) => {
     const { search, skill, city, area, latitude, longitude, radius } =
       req.query;
 
+    // 1. पेजिनेशन के लिए पेज और लिमिट सेट करें (डिफ़ॉल्ट: पेज 1, लिमिट 10)
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
     const keywordMap = {
       plumber: "प्लंबर",
       plamber: "प्लंबर",
@@ -186,15 +191,36 @@ const getLabours = async (req, res) => {
       mappedSkill = keywordMap[skill.toLowerCase().trim()];
     }
 
+    let lat = parseFloat(latitude);
+    let lon = parseFloat(longitude);
+    const hasGPS = !isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0;
+
+    // 2. SQL क्वेरी के अंदर ही Haversine Formula से दूरी (distance) कैलकुलेट करना
     let query = `
       SELECT *, 
         COALESCE((SELECT ROUND(AVG(rating), 1) FROM reviews WHERE reviews.labour_id::text = labours.id::text), 0.0) AS average_rating,
         (SELECT COUNT(*) FROM reviews WHERE reviews.labour_id::text = labours.id::text) AS total_reviews
-      FROM labours 
-      WHERE is_verified = true
     `;
+
     const values = [];
     let valueIndex = 1;
+
+    if (hasGPS) {
+      // अगर GPS उपलब्ध है तो सीधे SQL में दूरी निकालें (6371 KM पृथ्वी की त्रिज्या है)
+      query += `, 
+        ROUND((6371 * acos(
+          cos(radians($${valueIndex})) * cos(radians(latitude)) * 
+          cos(radians(longitude) - radians($${valueIndex + 1})) + 
+          sin(radians($${valueIndex})) * sin(radians(latitude))
+        ))::numeric, 2) AS distance
+      `;
+      values.push(lat, lon);
+      valueIndex += 2;
+    } else {
+      query += `, 999999 AS distance`;
+    }
+
+    query += ` FROM labours WHERE is_verified = true`;
 
     if (city) {
       query += ` AND city ILIKE $${valueIndex}`;
@@ -214,61 +240,37 @@ const getLabours = async (req, res) => {
       valueIndex++;
     }
 
-    query += " ORDER BY created_at DESC";
-
-    const result = await db.query(query, values);
-    let rows = result.rows;
-
-    if (latitude && longitude) {
-      const toRad = (v) => (v * Math.PI) / 180;
-
-      rows = rows.map((labour) => {
-        if (!labour.latitude || !labour.longitude) {
-          labour.distance = 999999;
-          return labour;
-        }
-
-        const R = 6371;
-
-        const dLat = toRad(labour.latitude - parseFloat(latitude));
-
-        const dLon = toRad(labour.longitude - parseFloat(longitude));
-
-        const a =
-          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.cos(toRad(parseFloat(latitude))) *
-            Math.cos(toRad(labour.latitude)) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
-
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        labour.distance = Number((R * c).toFixed(2));
-
-        return labour;
-      });
-
-      rows.sort((a, b) => a.distance - b.distance);
-
-      if (radius) {
-        rows = rows.filter((x) => {
-          if (x.distance == 999999) {
-            return true;
-          }
-
-          return x.distance <= parseFloat(radius);
-        });
-      }
+    // अगर रेडियस दिया है, तो उसे SQL की सबक्वेरी या आउटर फ़िल्टर में डालना बेहतर होता है,
+    // लाखों डेटा स्केल के लिए हम इसे WHERE क्लॉज़ में ही सीधे डिस्टेंस फॉर्मूले के साथ बांध सकते हैं
+    if (hasGPS && radius) {
+      query += ` AND (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) + sin(radians($1)) * sin(radians(latitude)))) <= $${valueIndex}`;
+      values.push(parseFloat(radius));
+      valueIndex++;
     }
 
-    console.log("========== GET LABOURS ==========");
-    console.log("Request Query:", req.query);
-    console.log("Rows Found:", result.rows.length);
-    console.log(result.rows);
+    // 3. सॉर्टिंग लॉजिक: अगर GPS है तो नजदीकी पहले, वरना Area और City के हिसाब से
+    if (hasGPS) {
+      query += " ORDER BY distance ASC";
+    } else {
+      query += " ORDER BY area ASC, city ASC, created_at DESC";
+    }
+
+    // 4. पेजिनेशन लिमिट और ऑफसेट जोड़ें (यह लाखों डेटा को रैम में आने से रोकेगा)
+    query += ` LIMIT $${valueIndex} OFFSET $${valueIndex + 1}`;
+    values.push(limit, offset);
+
+    const result = await db.query(query, values);
+
+    console.log("========== GET LABOURS (OPTIMIZED) ==========");
+    console.log(
+      `Page: ${page}, Limit: ${limit}, Rows Sent: ${result.rows.length}`,
+    );
 
     res.json({
       success: true,
-      data: rows,
+      page: page,
+      limit: limit,
+      data: result.rows,
     });
   } catch (error) {
     console.error("Fetch Labours Error:", error);
