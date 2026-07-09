@@ -1,8 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const notificationController = require("../controllers/notificationController");
+const {
+  sendTestNotificationRoute,
+} = require("../controllers/notificationController");
 
-// यह वो लिंक (API) है जिसे एडमिन हिट करेगा
-router.post("/send-ad", notificationController.sendAd);
+// 📍 लाइन नंबर 6: अब यहाँ 'sendTestNotificationRoute' फ़ंक्शन पास किया गया है जो कि एक वैलिड फ़ंक्शन है
+router.post("/send-test", sendTestNotificationRoute);
 
 module.exports = router;
