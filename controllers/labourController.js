@@ -251,7 +251,13 @@ const getLabours = async (req, res) => {
       rows.sort((a, b) => a.distance - b.distance);
 
       if (radius) {
-        rows = rows.filter((x) => x.distance <= parseFloat(radius));
+        rows = rows.filter((x) => {
+          if (x.distance == 999999) {
+            return true;
+          }
+
+          return x.distance <= parseFloat(radius);
+        });
       }
     }
 
