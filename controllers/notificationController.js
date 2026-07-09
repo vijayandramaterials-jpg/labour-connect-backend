@@ -1,24 +1,53 @@
-const { messaging } = require("../config/firebaseConfig");
+const { getMessaging } = require("../config/firebase");
 
-exports.sendAd = async (req, res) => {
-  try {
-    const { title, body, topic } = req.body;
+// कॉमन पुश नोटिफिकेशन भेजने का हेल्पर फंक्शन
+exports.sendPushNotification = async (
+  tokens,
+  title,
+  body,
+  extraData = {},
+  isUrgent = false,
+) => {
+  if (!tokens || tokens.length === 0) return;
 
-    const message = {
+  const message = {
+    notification: {
+      title: title,
+      body: body,
+    },
+    data: {
+      ...extraData,
+      urgent: isUrgent ? "true" : "false",
+    },
+    tokens: tokens,
+  };
+
+  // Urgent होने पर Android/iOS के लिए हाई प्रायॉरिटी सेटिंग्स जोड़ना
+  if (isUrgent) {
+    message.android = {
+      priority: "high",
       notification: {
-        title: title,
-        body: body,
+        sound: "default",
+        channelId: "urgent_jobs_channel",
       },
-      topic: topic,
     };
+    message.apns = {
+      headers: {
+        "apns-priority": "10",
+      },
+      payload: {
+        aps: {
+          sound: "default",
+        },
+      },
+    };
+  }
 
-    // यहाँ admin.messaging().send की जगह सीधे messaging.send() का इस्तेमाल
-    const response = await messaging.send(message);
-
-    res
-      .status(200)
-      .json({ success: true, message: "विज्ञापन भेज दिया गया!", response });
+  try {
+    const response = await getMessaging().sendEachForMulticast(message);
+    console.log("📨 सफलतापूर्वक नोटिफिकेशन भेजे गए:", response.successCount);
+    return response;
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error("❌ नोटिफिकेशन भेजने में एरर:", error);
   }
 };

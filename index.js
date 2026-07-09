@@ -15,6 +15,7 @@ const notificationRoutes = require("./routes/notificationRoutes"); // 🔴 1. �
 // --- Routes को इस्तेमाल (Use) करें ---
 app.use("/api/payment", paymentRoutes);
 app.use("/api/labours", require("./routes/labourRoutes"));
+app.use("/api/jobs", require("./routes/jobRoutes"));
 app.use("/api/notifications", notificationRoutes); // 🔴 2. नोटिफिकेशन का रूट यहाँ जोड़ दिया
 app.use("/api/customers", require("./routes/customerRoutes"));
 app.use("/api/support", require("./routes/supportRoutes"));
@@ -124,6 +125,14 @@ app.get("/shipping-policy", (req, res) => {
 app.get("/", (req, res) => {
   res.send("LabourConnect का बैकएंड सर्वर सफलतापूर्वक काम कर रहा है!");
 });
+
+const { checkAndExpandRadius } = require("./controllers/jobController");
+setInterval(
+  () => {
+    checkAndExpandRadius();
+  },
+  5 * 60 * 1000,
+);
 
 const PORT = process.env.PORT || 5000;
 
