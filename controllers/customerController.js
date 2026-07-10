@@ -75,29 +75,38 @@ exports.registerCustomer = async (req, res) => {
     // 2. अगर नया ग्राहक है, तो डेटाबेस में Insert करें
     const { data, error } = await supabase
       .from("customers")
-      .insert([
+      .upsert(
         {
           name,
-
           phone,
-
           latitude,
-
           longitude,
-
           state,
-
           city,
-
           area,
-
           last_login: new Date(),
         },
-      ])
+        {
+          onConflict: "phone",
+        },
+      )
       .select();
 
     if (error) {
-      console.error("❌ Supabase Insert Error:", error.message);
+      if (error.code === "23505") {
+        const { data: existing } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("phone", phone)
+          .single();
+
+        return res.status(200).json({
+          success: true,
+          message: "Welcome back",
+          data: existing,
+        });
+      }
+
       throw error;
     }
 
