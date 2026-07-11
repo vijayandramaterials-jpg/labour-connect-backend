@@ -244,17 +244,20 @@ const getLabours = async (req, res) => {
     // लाखों डेटा स्केल के लिए हम इसे WHERE क्लॉज़ में ही सीधे डिस्टेंस फॉर्मूले के साथ बांध सकते हैं
     if (hasGPS && radius) {
       query += `
-    AND latitude IS NOT NULL
-    AND longitude IS NOT NULL
-    AND (
-      6371 * acos(
-        cos(radians($1))
-        * cos(radians(latitude))
-        * cos(radians(longitude)-radians($2))
-        + sin(radians($1))
-        * sin(radians(latitude))
+  AND (
+        latitude IS NULL
+        OR longitude IS NULL
+        OR
+        (
+          6371 * acos(
+            cos(radians($1))
+            * cos(radians(latitude))
+            * cos(radians(longitude)-radians($2))
+            + sin(radians($1))
+            * sin(radians(latitude))
+          )
+        ) <= $${valueIndex}
       )
-    ) <= $${valueIndex}
   `;
 
       values.push(parseFloat(radius));
@@ -264,9 +267,20 @@ const getLabours = async (req, res) => {
 
     // 3. सॉर्टिंग लॉजिक: अगर GPS है तो नजदीकी पहले, वरना Area और City के हिसाब से
     if (hasGPS) {
-      query += " ORDER BY distance ASC";
+      query += `
+    ORDER BY
+      CASE
+        WHEN latitude IS NULL OR longitude IS NULL THEN 999999
+        ELSE distance
+      END ASC,
+      created_at DESC
+  `;
     } else {
-      query += " ORDER BY area ASC, city ASC, created_at DESC";
+      query += `
+    ORDER BY area ASC,
+             city ASC,
+             created_at DESC
+  `;
     }
 
     // 4. पेजिनेशन लिमिट और ऑफसेट जोड़ें (यह लाखों डेटा को रैम में आने से रोकेगा)
