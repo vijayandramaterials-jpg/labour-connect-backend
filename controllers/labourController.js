@@ -268,12 +268,8 @@ const getLabours = async (req, res) => {
     // 3. सॉर्टिंग लॉजिक: अगर GPS है तो नजदीकी पहले, वरना Area और City के हिसाब से
     if (hasGPS) {
       query += `
-    ORDER BY
-      CASE
-        WHEN latitude IS NULL OR longitude IS NULL THEN 999999
-        ELSE distance
-      END ASC,
-      created_at DESC
+    ORDER BY distance ASC NULLS LAST,
+             created_at DESC
   `;
     } else {
       query += `
