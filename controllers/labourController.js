@@ -243,8 +243,22 @@ const getLabours = async (req, res) => {
     // अगर रेडियस दिया है, तो उसे SQL की सबक्वेरी या आउटर फ़िल्टर में डालना बेहतर होता है,
     // लाखों डेटा स्केल के लिए हम इसे WHERE क्लॉज़ में ही सीधे डिस्टेंस फॉर्मूले के साथ बांध सकते हैं
     if (hasGPS && radius) {
-      query += ` AND (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2)) + sin(radians($1)) * sin(radians(latitude)))) <= $${valueIndex}`;
+      query += `
+    AND latitude IS NOT NULL
+    AND longitude IS NOT NULL
+    AND (
+      6371 * acos(
+        cos(radians($1))
+        * cos(radians(latitude))
+        * cos(radians(longitude)-radians($2))
+        + sin(radians($1))
+        * sin(radians(latitude))
+      )
+    ) <= $${valueIndex}
+  `;
+
       values.push(parseFloat(radius));
+
       valueIndex++;
     }
 
@@ -259,7 +273,20 @@ const getLabours = async (req, res) => {
     query += ` LIMIT $${valueIndex} OFFSET $${valueIndex + 1}`;
     values.push(limit, offset);
 
+    // ===== DEBUG START =====
+    console.log("=========== SQL QUERY ===========");
+    console.log(query);
+    console.log("VALUES :", values);
+    console.log("================================");
+    // ===== DEBUG END =====
+
     const result = await db.query(query, values);
+
+    console.log("Rows Returned :", result.rows.length);
+
+    if (result.rows.length > 0) {
+      console.log(result.rows);
+    }
 
     console.log("========== GET LABOURS (OPTIMIZED) ==========");
     console.log(
