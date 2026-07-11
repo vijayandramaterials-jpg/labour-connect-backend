@@ -13,6 +13,7 @@ const {
   addReview,
   getLabourReviews,
   postJobAndNotify,
+  updateLabourLocation,
 } = require("../controllers/labourController");
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -33,6 +34,6 @@ router.put("/:id/edit", editLabourProfile);
 router.post("/reviews", addReview);
 router.get("/:labour_id/reviews", getLabourReviews);
 router.post("/jobs/broadcast", postJobAndNotify);
-router.post("/update-location", labourController.updateLabourLocation);
+router.post("/update-location", updateLabourLocation);
 
 module.exports = router;
