@@ -681,17 +681,23 @@ const updateLabourLocation = async (req, res) => {
   try {
     const { phone, latitude, longitude, state, city, area } = req.body;
 
-    await db.query(
+    console.log("===== UPDATE LOCATION API =====");
+    console.log(req.body);
+
+    const result = await db.query(
       `UPDATE labours
-       SET
-         latitude = $1,
-         longitude = $2,
-         state = $3,
-         city = $4,
-         area = $5
-       WHERE phone = $6`,
+   SET
+     latitude=$1,
+     longitude=$2,
+     state=$3,
+     city=$4,
+     area=$5
+   WHERE phone=$6
+   RETURNING *`,
       [latitude, longitude, state, city, area, phone],
     );
+
+    console.log(result.rows);
 
     res.json({
       success: true,
