@@ -659,6 +659,40 @@ const getLabourReviews = async (req, res) => {
   }
 };
 
+// =======================================
+// UPDATE LABOUR LIVE LOCATION
+// =======================================
+
+const updateLabourLocation = async (req, res) => {
+  try {
+    const { phone, latitude, longitude, state, city, area } = req.body;
+
+    await db.query(
+      `UPDATE labours
+       SET
+         latitude = $1,
+         longitude = $2,
+         state = $3,
+         city = $4,
+         area = $5
+       WHERE phone = $6`,
+      [latitude, longitude, state, city, area, phone],
+    );
+
+    res.json({
+      success: true,
+      message: "Location Updated Successfully",
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      success: false,
+      message: e.message,
+    });
+  }
+};
+
 // 🔴 सभी फंक्शन्स को सही तरीके से एक्सपोर्ट करना (यहाँ कोई राउटर नहीं आएगा)
 module.exports = {
   addLabour,
@@ -672,4 +706,5 @@ module.exports = {
   addReview,
   getLabourReviews,
   postJobAndNotify,
+  updateLabourLocation,
 };

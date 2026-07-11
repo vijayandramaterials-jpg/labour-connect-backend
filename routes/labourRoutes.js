@@ -33,5 +33,6 @@ router.put("/:id/edit", editLabourProfile);
 router.post("/reviews", addReview);
 router.get("/:labour_id/reviews", getLabourReviews);
 router.post("/jobs/broadcast", postJobAndNotify);
+router.post("/update-location", labourController.updateLabourLocation);
 
 module.exports = router;
