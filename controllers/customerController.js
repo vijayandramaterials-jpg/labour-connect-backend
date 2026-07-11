@@ -45,6 +45,14 @@ exports.registerCustomer = async (req, res) => {
     }
 
     if (existingCustomer) {
+      const locationChanged =
+        existingCustomer.latitude != latitude ||
+        existingCustomer.longitude != longitude;
+
+      console.log("Location Changed :", locationChanged);
+      if (locationChanged) {
+        console.log("Updating Customer GPS");
+      }
       await supabase
         .from("customers")
         .update({
@@ -54,6 +62,9 @@ exports.registerCustomer = async (req, res) => {
           city,
           area,
           last_login: new Date(),
+          is_online: true,
+
+          last_location_update: new Date(),
         })
         .eq("phone", phone);
 
@@ -85,6 +96,9 @@ exports.registerCustomer = async (req, res) => {
           city,
           area,
           last_login: new Date(),
+          is_online: true,
+
+          last_location_update: new Date(),
         },
         {
           onConflict: "phone",

@@ -521,7 +521,16 @@ const rejectLabour = async (req, res) => {
 
 // 7. [LABOUR LOGIN] - सिर्फ फोन नंबर चेक करेगा (पिन की ज़रूरत नहीं)
 const labourLogin = async (req, res) => {
-  const { phone } = req.body;
+  const { phone, fcm_token } = req.body;
+  console.log("===== LABOUR LOGIN =====");
+  console.log("Phone :", phone);
+  console.log("FCM Token :", fcm_token);
+  if (!phone) {
+    return res.status(400).json({
+      success: false,
+      message: "Phone number required",
+    });
+  }
 
   try {
     const query = `
@@ -538,6 +547,20 @@ const labourLogin = async (req, res) => {
 
     const result = await db.query(query, [phone]);
 
+    await db.query(
+      `
+  UPDATE labours
+  SET
+      is_online = true,
+      last_login = NOW(),
+      last_location_update = NOW(),
+      fcm_token = COALESCE($2, fcm_token)
+  WHERE phone = $1
+  `,
+      [phone, fcm_token],
+    );
+    console.log("Labour Online Updated");
+
     // अगर नंबर डेटाबेस में नहीं है, तो साफ एरर भेजें ताकि Flutter यूजर को रजिस्टर करने बोले
     if (result.rows.length === 0) {
       return res.status(404).json({
@@ -545,6 +568,14 @@ const labourLogin = async (req, res) => {
         message: "यह नंबर रजिस्टर्ड नहीं है। कृपया पहले नया अकाउंट बनाएं।",
       });
     }
+
+    console.log("✅ Labour Login :", phone);
+
+    console.log({
+      online: true,
+      last_login: new Date(),
+      fcm: fcm_token ?? "NO TOKEN",
+    });
 
     // अगर नंबर मिल गया, तो डेटा भेज दें
     res.status(200).json({
