@@ -20,8 +20,8 @@ exports.createJobAdvertisement = async (req, res) => {
   try {
     const query = `
       INSERT INTO jobs 
-      (customer_phone, skill_needed, area, city, state, scope, radius, urgent, description, latitude, longitude, status, response_count, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active', 0, NOW())
+      (customer_phone, skill_needed, area, city, state, scope, radius, urgent, description, latitude, longitude, status, response_count, created_at, expires_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active', 0,  NOW(), NOW() + INTERVAL '24 HOURS')
       RETURNING *;
     `;
 
@@ -109,8 +109,12 @@ exports.respondToJob = async (req, res) => {
 
 // 3. मैचिंग टोकन्स ढूंढकर पुश नोटिफिकेशन भेजने का कोर फ़ंक्शन
 async function triggerJobNotifications(job) {
+  console.log("========== JOB NOTIFICATION ==========");
+  console.log(job);
+
+  const sentTokens = new Set();
   let sql =
-    "SELECT fcm_token, latitude, longitude FROM labours WHERE skill = $1 AND is_verified = true";
+    "SELECT id, fcm_token, latitude, longitude, is_online, last_login FROM labours WHERE skill = $1 AND is_verified = true";
   let params = [job.skill_needed];
 
   const workersResult = await db.query(sql, params);
@@ -126,6 +130,10 @@ async function triggerJobNotifications(job) {
     job_id: job.id.toString(),
     skill: job.skill_needed,
     description: job.description,
+    scope: job.scope,
+    area: job.area,
+    city: job.city,
+    state: job.state,
   };
 
   if (job.scope === "AREA" && job.latitude && job.longitude && job.radius) {
@@ -133,7 +141,7 @@ async function triggerJobNotifications(job) {
     const toRad = (v) => (v * Math.PI) / 180;
     const R = 6371; // पृथ्वी की त्रिज्या KM में
 
-    workersResult.rows.forEach((labour) => {
+    for (const labour of workersResult.rows) {
       if (labour.latitude && labour.longitude && labour.fcm_token) {
         const dLat = toRad(labour.latitude - parseFloat(job.latitude));
         const dLon = toRad(labour.longitude - parseFloat(job.longitude));
@@ -147,10 +155,31 @@ async function triggerJobNotifications(job) {
         const distance = R * c;
 
         if (distance <= parseFloat(job.radius)) {
-          eligibleTokens.push(labour.fcm_token);
+          if (!sentTokens.has(labour.fcm_token)) {
+            sentTokens.add(labour.fcm_token);
+
+            const alreadySent = await db.query(
+              `
+            SELECT id FROM job_notification_history WHERE job_id=$1 AND labour_id=$2`,
+              [job.id, labour.id],
+            );
+            if (alreadySent.rows.length === 0) {
+              eligibleTokens.push(labour.fcm_token);
+
+              await db.query(
+                `
+                      INSERT INTO job_notification_history
+                      (job_id,labour_id)
+                      VALUES($1,$2)
+                      ON CONFLICT DO NOTHING
+                      `,
+                [job.id, labour.id],
+              );
+            }
+          }
         }
       }
-    });
+    }
   } else if (job.scope === "CITY") {
     const citySql = `SELECT fcm_token FROM labours WHERE skill = $1 AND city ILIKE $2 AND is_verified = true`;
     const cityRes = await db.query(citySql, [
@@ -173,6 +202,8 @@ async function triggerJobNotifications(job) {
   }
 
   if (eligibleTokens.length > 0) {
+    console.log("Eligible Workers :", eligibleTokens.length);
+    console.log("Notification Sent");
     await sendPushNotification(
       eligibleTokens,
       title,
@@ -226,6 +257,12 @@ exports.checkAndExpandRadius = async () => {
         const { rows } = await db.query("SELECT * FROM jobs WHERE id = $1", [
           job.id,
         ]);
+        console.log("================================");
+        console.log("Radius Expanded");
+        console.log("Job :", job.id);
+        console.log("Scope :", updatedFields.scope || job.scope);
+        console.log("Radius :", updatedFields.radius || job.radius);
+        console.log("================================");
         await triggerJobNotifications(rows[0]);
         console.log(
           `🔄 जॉब विज्ञापन ID: ${job.id} का दायरा ऑटो-विस्तारित करके सूचित कर दिया गया है।`,
@@ -235,4 +272,70 @@ exports.checkAndExpandRadius = async () => {
   } catch (error) {
     console.error("Error in Auto Radius Expansion Loop:", error);
   }
+
+  exports.getAvailableJobs = async (req, res) => {
+    try {
+      const { phone } = req.query;
+
+      const labour = await db.query(
+        `
+      SELECT skill,city,state,area
+      FROM labours
+      WHERE phone=$1
+      `,
+        [phone],
+      );
+
+      if (labour.rows.length == 0) {
+        return res.status(404).json({
+          success: false,
+        });
+      }
+
+      const worker = labour.rows[0];
+
+      const jobs = await db.query(
+        `
+SELECT *
+FROM jobs
+WHERE
+status='active'
+AND expires_at > NOW()
+AND skill_needed=$1
+AND
+(
+(scope='AREA' AND area ILIKE $2)
+
+OR
+
+(scope='CITY' AND city ILIKE $3)
+
+OR
+
+(scope='STATE' AND state ILIKE $4)
+
+OR
+
+(scope='ALL_INDIA')
+)
+
+ORDER BY
+urgent DESC,
+created_at DESC
+`,
+        [worker.skill, worker.area, worker.city, worker.state],
+      );
+
+      res.json({
+        success: true,
+        data: jobs.rows,
+      });
+    } catch (e) {
+      console.log(e);
+
+      res.status(500).json({
+        success: false,
+      });
+    }
+  };
 };

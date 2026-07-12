@@ -90,6 +90,8 @@ const createOrder = async (req, res) => {
     }
 
     const merchantTransactionId = "TXN" + Date.now();
+    console.log("========== CREATE ORDER ==========");
+    console.log(req.body);
     const serverPort = process.env.PORT || 5000;
 
     const payload = {
@@ -148,6 +150,10 @@ const createOrder = async (req, res) => {
       ],
     );
 
+    console.log("Transaction Saved");
+
+    console.log(merchantTransactionId);
+
     const request = https.request(options, (response) => {
       let body = "";
       response.on("data", (chunk) => (body += chunk));
@@ -160,7 +166,9 @@ const createOrder = async (req, res) => {
             "--- PhonePe API Response Status Code ---:",
             response.statusCode,
           );
-          console.log("--- PhonePe API Response Body ---:", resData);
+          console.log("PhonePe Response");
+
+          console.log(resData);
 
           if (
             resData.success &&
@@ -272,7 +280,11 @@ const phonepeCallback = async (req, res) => {
             city: job.city,
             state: job.state,
             scope: job.scope,
+            radius: job.radius,
+            urgent: job.urgent,
             description: job.description,
+            latitude: job.latitude,
+            longitude: job.longitude,
           });
 
           const internalOptions = {

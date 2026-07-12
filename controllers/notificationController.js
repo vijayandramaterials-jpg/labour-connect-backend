@@ -5,19 +5,38 @@ const sendPushNotification = async (
   tokens,
   title,
   body,
-  extraData = {},
+  extraData = {
+    type: "ADVERTISEMENT",
+  },
   isUrgent = false,
 ) => {
   if (!tokens || tokens.length === 0) return;
 
+  console.log("========== FCM SEND ==========");
+  console.log("Tokens :", tokens.length);
+  console.log("Title :", title);
+  console.log("Body :", body);
+  console.log("Extra :", extraData);
+
   const message = {
     notification: {
-      title: title,
-      body: body,
+      title,
+      body,
+      imageUrl: "https://kaampoint.in/logo.png",
+    },
+    android: {
+      priority: "high",
+      notification: {
+        sound: "default",
+        channelId: isUrgent ? "urgent_jobs_channel" : "normal_jobs_channel",
+      },
     },
     data: {
       ...extraData,
       urgent: isUrgent ? "true" : "false",
+      click_action: "FLUTTER_NOTIFICATION_CLICK",
+      time: Date.now().toString(),
+      screen: "jobs",
     },
     tokens: tokens,
   };
@@ -38,7 +57,47 @@ const sendPushNotification = async (
 
   try {
     const response = await getMessaging().sendEachForMulticast(message);
-    console.log(" analytical 📨 नोटिफिकेशन भेजे गए:", response.successCount);
+    console.log("================================");
+    console.log("Success :", response.successCount);
+    console.log("Failed :", response.failureCount);
+
+    response.responses.forEach((r, i) => {
+      if (!r.success) {
+        console.log("Invalid Token :", tokens[i]);
+        console.log(r.error);
+      }
+    });
+
+    console.log("================================");
+    for (let i = 0; i < response.responses.length; i++) {
+      if (!response.responses[i].success) {
+        const code = response.responses[i].error.code;
+
+        if (code === "messaging/registration-token-not-registered") {
+          await require("../config/db").query(
+            `
+UPDATE labours
+SET fcm_token=NULL
+WHERE fcm_token=$1
+`,
+            [tokens[i]],
+          );
+
+          console.log("Dead Token Removed");
+        }
+      }
+    }
+    console.log("✅ Success :", response.successCount);
+
+    console.log("❌ Failed :", response.failureCount);
+    await require("../config/db").query(
+      `
+UPDATE jobs
+SET notification_sent=$1
+WHERE id=$2
+`,
+      [response.successCount, extraData.job_id],
+    );
     return response;
   } catch (error) {
     console.error("❌ नोटिफिकेशन भेजने में एरर:", error);
