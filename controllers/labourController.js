@@ -39,6 +39,7 @@ const addLabour = async (req, res) => {
     state,
     latitude,
     longitude,
+    experience,
   } = req.body;
 
   try {
@@ -101,10 +102,11 @@ const addLabour = async (req, res) => {
         area,
         state,
         latitude,
-        longitude
+        longitude,
+        experience
       )
       VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
       ) 
       RETURNING *;
     `;
@@ -112,8 +114,8 @@ const addLabour = async (req, res) => {
     const values = [
       name,
       phone,
-      JSON.stringify(skillsArray), // JSONB array save hoga
-      skillsArray.length > 0 ? skillsArray[0] : null, // purane skill me pehli skill daal di
+      JSON.stringify(skillsArray),
+      skillsArray.length > 0 ? skillsArray[0] : null,
       daily_wage,
       location,
       aadhaar_number,
@@ -125,6 +127,7 @@ const addLabour = async (req, res) => {
       state || "",
       latitude || null,
       longitude || null,
+      experience,
     ];
 
     console.log("========== Labour GPS ==========");
@@ -212,7 +215,9 @@ const getLabours = async (req, res) => {
 
     // 2. SQL क्वेरी के अंदर ही Haversine Formula से दूरी (distance) कैलकुलेट करना
     let query = `
-      SELECT *, 
+      SELECT
+      *,
+      is_verified AS verified, 
         COALESCE((SELECT ROUND(AVG(rating), 1) FROM reviews WHERE reviews.labour_id::text = labours.id::text), 0.0) AS average_rating,
         (SELECT COUNT(*) FROM reviews WHERE reviews.labour_id::text = labours.id::text) AS total_reviews
     `;
@@ -244,7 +249,7 @@ const getLabours = async (req, res) => {
     }
 
     if (mappedSearch) {
-      query += ` AND (name ILIKE $${valueIndex} OR location ILIKE $${valueIndex} OR area ILIKE $${valueIndex} OR skill ILIKE $${valueIndex})`;
+      query += `AND (name ILIKE $${valueIndex} OR location ILIKE $${valueIndex} OR area ILIKE $${valueIndex} OR skill ILIKE $${valueIndex} OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(skills) s WHERE s ILIKE $${valueIndex}))`;
       values.push(`%${mappedSearch}%`);
       valueIndex++;
     }
@@ -558,7 +563,9 @@ const labourLogin = async (req, res) => {
 
   try {
     const query = `
-      SELECT l.*, 
+      SELECT
+      l.*,
+      l.is_verified AS verified, 
         COALESCE(ROUND(AVG(r.rating), 1), 0.0) AS average_rating, 
         COUNT(r.id) AS total_reviews
       FROM labours l 
@@ -634,8 +641,10 @@ const searchLabours = async (req, res) => {
   FROM labours
   WHERE is_verified = true
   AND (
+      name ILIKE $1
       location ILIKE $1
       OR skill ILIKE $1
+      OR experience ILIKE $1
       OR EXISTS (
           SELECT 1
           FROM jsonb_array_elements_text(skills) s
@@ -657,11 +666,23 @@ const searchLabours = async (req, res) => {
 const editLabourProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, skills, address, city, area } = req.body;
+    const { name, phone, skills, experience, daily_wage, state, city, area } =
+      req.body;
 
     const result = await db.query(
-      "UPDATE labours SET name = $1, phone = $2, skills = $3, skill=$4,address=$5,city=$6,area=$7 WHERE id=$8 RETURNING *",
-      [name, phone, JSON.stringify(skills), skills[0], address, city, area, id],
+      "UPDATE labours SET name = $1, phone = $2, skills = $3, skill = $4, experience = $5, daily_wage = $6, state = $7, city = $8,area = $9 WHERE id = $10 RETURNING *",
+      [
+        name,
+        phone,
+        JSON.stringify(skills),
+        skills[0],
+        experience,
+        daily_wage,
+        state,
+        city,
+        area,
+        id,
+      ],
     );
 
     if (result.rows.length === 0) {
