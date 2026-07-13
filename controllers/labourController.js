@@ -71,12 +71,26 @@ const addLabour = async (req, res) => {
     const aadhaarFrontUrl = await uploadToSupabase(frontFile, "aadhaar_front");
     const aadhaarBackUrl = await uploadToSupabase(backFile, "aadhaar_back");
 
-    // 🔴 पिन कॉलम हटा दिया गया है
+    let skillsArray = [];
+    if (req.body.skills) {
+      try {
+        skillsArray =
+          typeof req.body.skills === "string"
+            ? JSON.parse(req.body.skills)
+            : req.body.skills;
+      } catch (e) {
+        skillsArray = [req.body.skills];
+      }
+    } else if (req.body.skill) {
+      skillsArray = [req.body.skill]; // purane app version ka backup
+    }
+
     const query = `
       INSERT INTO labours (
         name,
         phone,
-        skill,
+        skills,       -- Naya column
+        skill,        -- Backup ke liye purana column bhi save kar sakte hain
         daily_wage,
         location,
         aadhaar_number,
@@ -90,15 +104,16 @@ const addLabour = async (req, res) => {
         longitude
       )
       VALUES (
-$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
-) 
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+      ) 
       RETURNING *;
     `;
 
     const values = [
       name,
       phone,
-      skill,
+      JSON.stringify(skillsArray), // JSONB array save hoga
+      skillsArray.length > 0 ? skillsArray[0] : null, // purane skill me pehli skill daal di
       daily_wage,
       location,
       aadhaar_number,
@@ -235,9 +250,12 @@ const getLabours = async (req, res) => {
     }
 
     if (mappedSkill && mappedSkill !== "All" && mappedSkill !== "सभी") {
-      query += ` AND skill = $${valueIndex}`;
-      values.push(mappedSkill);
-      valueIndex++;
+      // JSONB column 'skills' ke andar specific skill dhoondhne ke liye operator @> use kiya hai.
+      // Aur purane 'skill' column me bhi dhoondhega taki old data delete na ho.
+      query += ` AND (skills @> $${valueIndex}::jsonb OR skill = $${valueIndex + 1})`;
+      values.push(JSON.stringify([mappedSkill])); // valueIndex
+      values.push(mappedSkill); // valueIndex + 1
+      valueIndex += 2;
     }
 
     // अगर रेडियस दिया है, तो उसे SQL की सबक्वेरी या आउटर फ़िल्टर में डालना बेहतर होता है,
@@ -347,62 +365,68 @@ const postJobAndNotify = async (req, res) => {
         sql = `
       SELECT fcm_token
       FROM labours
-      WHERE skill=$1
-      AND state ILIKE $2
-      AND city ILIKE $3
-      AND area ILIKE $4
+      WHERE (skills @> $1::jsonb OR skill = $2)
+      AND state ILIKE $3
+      AND city ILIKE $4
+      AND area ILIKE $5
       AND is_verified=true
     `;
-
-        params = [skill_needed, `%${state}%`, `%${city}%`, `%${area}%`];
+        params = [
+          JSON.stringify([skill_needed]),
+          skill_needed,
+          `%${state}%`,
+          `%${city}%`,
+          `%${area}%`,
+        ];
         break;
 
       case "CITY":
         sql = `
       SELECT fcm_token
       FROM labours
-      WHERE skill=$1
-      AND state ILIKE $2
-      AND city ILIKE $3
+      WHERE (skills @> $1::jsonb OR skill = $2)
+      AND state ILIKE $3
+      AND city ILIKE $4
       AND is_verified=true
     `;
-
-        params = [skill_needed, `%${state}%`, `%${city}%`];
+        params = [
+          JSON.stringify([skill_needed]),
+          skill_needed,
+          `%${state}%`,
+          `%${city}%`,
+        ];
         break;
 
       case "STATE":
         sql = `
       SELECT fcm_token
       FROM labours
-      WHERE skill=$1
-      AND state ILIKE $2
+      WHERE (skills @> $1::jsonb OR skill = $2)
+      AND state ILIKE $3
       AND is_verified=true
     `;
-
-        params = [skill_needed, `%${state}%`];
+        params = [JSON.stringify([skill_needed]), skill_needed, `%${state}%`];
         break;
 
       case "ALL_INDIA":
         sql = `
       SELECT fcm_token
       FROM labours
-      WHERE skill=$1
+      WHERE (skills @> $1::jsonb OR skill = $2)
       AND is_verified=true
     `;
-
-        params = [skill_needed];
+        params = [JSON.stringify([skill_needed]), skill_needed];
         break;
 
       default:
         sql = `
       SELECT fcm_token
       FROM labours
-      WHERE skill=$1
-      AND city ILIKE $2
+      WHERE (skills @> $1::jsonb OR skill = $2)
+      AND city ILIKE $3
       AND is_verified=true
     `;
-
-        params = [skill_needed, `%${city}%`];
+        params = [JSON.stringify([skill_needed]), skill_needed, `%${city}%`];
     }
 
     const workerResult = await db.query(sql, params);
@@ -547,16 +571,24 @@ const labourLogin = async (req, res) => {
 
     const result = await db.query(query, [phone]);
 
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "यह नंबर रजिस्टर्ड नहीं है। कृपया पहले नया अकाउंट बनाएं।",
+      });
+    }
+
+    // इसके बाद UPDATE करो
     await db.query(
       `
-  UPDATE labours
-  SET
-      is_online = true,
-      last_login = NOW(),
-      last_location_update = NOW(),
-      fcm_token = COALESCE($2, fcm_token)
-  WHERE phone = $1
-  `,
+UPDATE labours
+SET
+    is_online = true,
+    last_login = NOW(),
+    last_location_update = NOW(),
+    fcm_token = $2
+WHERE phone = $1
+`,
       [phone, fcm_token],
     );
     console.log("Labour Online Updated");
