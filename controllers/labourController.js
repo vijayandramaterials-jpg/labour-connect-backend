@@ -593,14 +593,6 @@ WHERE phone = $1
     );
     console.log("Labour Online Updated");
 
-    // अगर नंबर डेटाबेस में नहीं है, तो साफ एरर भेजें ताकि Flutter यूजर को रजिस्टर करने बोले
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "यह नंबर रजिस्टर्ड नहीं है। कृपया पहले नया अकाउंट बनाएं।",
-      });
-    }
-
     console.log("✅ Labour Login :", phone);
 
     console.log({
@@ -631,13 +623,26 @@ const searchLabours = async (req, res) => {
 
     if (!searchQuery) {
       const result = await db.query(
-        "SELECT * FROM labours WHERE status = 'verified'",
+        "SELECT * FROM labours WHERE is_verified=true",
       );
       return res.status(200).json({ success: true, data: result.rows });
     }
 
     const result = await db.query(
-      "SELECT * FROM labours WHERE status = 'verified' AND address ILIKE $1",
+      `
+  SELECT *
+  FROM labours
+  WHERE is_verified = true
+  AND (
+      location ILIKE $1
+      OR skill ILIKE $1
+      OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(skills) s
+          WHERE s ILIKE $1
+      )
+  )
+  `,
       [`%${searchQuery}%`],
     );
 
@@ -652,11 +657,11 @@ const searchLabours = async (req, res) => {
 const editLabourProfile = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone, skill, address, city, area } = req.body;
+    const { name, phone, skills, address, city, area } = req.body;
 
     const result = await db.query(
-      "UPDATE labours SET name = $1, phone = $2, skill = $3, address = $4, city = $5, area = $6 WHERE id = $7 RETURNING *",
-      [name, phone, skill, address, city, area, id],
+      "UPDATE labours SET name = $1, phone = $2, skills = $3, skill=$4,address=$5,city=$6,area=$7 WHERE id=$8 RETURNING *",
+      [name, phone, JSON.stringify(skills), skills[0], address, city, area, id],
     );
 
     if (result.rows.length === 0) {
@@ -750,7 +755,8 @@ const updateLabourLocation = async (req, res) => {
      longitude=$2,
      state=$3,
      city=$4,
-     area=$5
+     area=$5,
+     last_location_update=NOW()
    WHERE phone=$6
    RETURNING *`,
       [latitude, longitude, state, city, area, phone],
