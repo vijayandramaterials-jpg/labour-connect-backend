@@ -11,12 +11,14 @@ app.use(express.json());
 // --- Routes इम्पोर्ट करें ---
 const paymentRoutes = require("./routes/paymentRoutes");
 const notificationRoutes = require("./routes/notificationRoutes"); // 🔴 1. नोटिफिकेशन का रूट इम्पोर्ट किया
+const adminAdvertisementRoutes = require("./routes/adminAdvertisementRoutes");
 
 // --- Routes को इस्तेमाल (Use) करें ---
 app.use("/api/payment", paymentRoutes);
 app.use("/api/labours", require("./routes/labourRoutes"));
 app.use("/api/jobs", require("./routes/jobRoutes"));
 app.use("/api/notifications", notificationRoutes); // 🔴 2. नोटिफिकेशन का रूट यहाँ जोड़ दिया
+app.use("/api/admin-advertisements", adminAdvertisementRoutes); // 🔴 3. एडमिन विज्ञापन का रूट यहाँ जोड़ दिया
 app.use("/api/customers", require("./routes/customerRoutes"));
 app.use("/api/support", require("./routes/supportRoutes"));
 
