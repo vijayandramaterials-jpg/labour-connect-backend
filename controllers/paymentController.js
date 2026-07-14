@@ -260,6 +260,15 @@ const phonepeCallback = async (req, res) => {
           console.log(
             `✅ Contact Unlocked: Customer=${txn.customer_phone}, Labour=${formattedLabourId}`,
           );
+        } else if (txn.type === "BULK_PACKAGE") {
+          // पेमेंट सफल होने पर कस्टमर की टेबल में 10 क्रेडिट्स (unlock_credits) जोड़ें
+          await db.query(
+            "UPDATE customers SET unlock_credits = COALESCE(unlock_credits, 0) + 10 WHERE customer_phone = $1",
+            [txn.customer_phone],
+          );
+          console.log(
+            `🎁 Bulk Package Success: Added 10 credits to Customer=${txn.customer_phone}`,
+          );
         } else if (txn.type === "ADVERTISEMENT" && txn.job_metadata) {
           const job = txn.job_metadata;
           console.log("========== Advertisement ==========");
@@ -385,9 +394,76 @@ const savePurchase = async (req, res) => {
   }
 };
 
+const unlockWithCredit = async (req, res) => {
+  const { customer_phone, labour_id } = req.body;
+
+  if (!customer_phone || !labour_id) {
+    return res
+      .status(400)
+      .json({ success: false, message: "अनिवार्य डेटा गायब है!" });
+  }
+
+  try {
+    // 1. चेक करें कि कस्टमर के पास क्रेडिट बचा है या नहीं
+    const userCheck = await db.query(
+      "SELECT unlock_credits FROM customers WHERE customer_phone = $1",
+      [customer_phone],
+    );
+
+    if (
+      userCheck.rows.length === 0 ||
+      (userCheck.rows[0].unlock_credits || 0) <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "आपके पास पर्याप्त क्रेडिट नहीं हैं! ❌",
+      });
+    }
+
+    const formattedLabourId = parseInt(labour_id, 10);
+    const expiresAt = new Date();
+    expiresAt.setHours(23, 59, 59, 999); // आज रात 12 बजे तक की वैलिडिटी
+
+    // डेटाबेस कंसिस्टेंसी के लिए सुरक्षित ट्रांजैक्शन शुरू करें
+    await db.query("BEGIN");
+
+    // 2. कस्टमर का 1 क्रेडिट कम करें
+    const updateRes = await db.query(
+      "UPDATE customers SET unlock_credits = unlock_credits - 1 WHERE customer_phone = $1 RETURNING unlock_credits",
+      [customer_phone],
+    );
+    const remainingCredits = updateRes.rows[0].unlock_credits;
+
+    // 3. कारीगर का कांटेक्ट अनलॉक लिस्ट में दर्ज करें
+    await db.query(
+      "INSERT INTO purchased_contacts (customer_phone, labour_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+      [customer_phone, formattedLabourId, expiresAt],
+    );
+
+    await db.query("COMMIT");
+
+    console.log(
+      `✨ Credit Unlock Success: Customer=${customer_phone} used 1 credit. Remaining=${remainingCredits}`,
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "क्रेडिट का उपयोग करके नंबर सफलतापूर्वक अनलॉक हुआ! ✅",
+      remaining_credits: remainingCredits,
+    });
+  } catch (error) {
+    await db.query("ROLLBACK");
+    console.error("Unlock With Credit Error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "क्रेडिट अनलॉक प्रोसेसिंग फेल हुई।" });
+  }
+};
+
 module.exports = {
   createOrder,
   getUnlockedContacts,
   phonepeCallback,
   savePurchase,
+  unlockWithCredit,
 };

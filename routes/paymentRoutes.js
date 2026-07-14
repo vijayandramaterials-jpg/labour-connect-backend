@@ -20,4 +20,6 @@ router.post("/save-purchase", savePurchase);
 // PhonePe पेमेंट पूरा होने के बाद इस रूट पर रिस्पॉन्स भेजेगा
 router.post("/phonepe-callback", phonepeCallback);
 
+router.post("/unlock-with-credit", paymentController.unlockWithCredit);
+
 module.exports = router;
