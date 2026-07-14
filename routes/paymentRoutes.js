@@ -6,6 +6,7 @@ const {
   getUnlockedContacts,
   phonepeCallback,
   savePurchase,
+  unlockWithCredit, // ✅ ऊपर यहाँ जोड़ दिया
 } = require("../controllers/paymentController");
 
 // फ्रंटएंड से पेमेंट रिक्वेस्ट के लिए
@@ -20,6 +21,7 @@ router.post("/save-purchase", savePurchase);
 // PhonePe पेमेंट पूरा होने के बाद इस रूट पर रिस्पॉन्स भेजेगा
 router.post("/phonepe-callback", phonepeCallback);
 
-router.post("/unlock-with-credit", paymentController.unlockWithCredit);
+// क्रेडिट से कांटेक्ट अनलॉक करने का रूट
+router.post("/unlock-with-credit", unlockWithCredit); // ✅ नीचे से paymentController. हटा दिया
 
 module.exports = router;
