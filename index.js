@@ -128,6 +128,26 @@ app.get("/", (req, res) => {
   res.send("LabourConnect का बैकएंड सर्वर सफलतापूर्वक काम कर रहा है!");
 });
 
+// ==========================================
+// ⚡ RENDER & SUPABASE KEEP-ALIVE PING ROUTE ⚡
+// ==========================================
+app.get("/ping", async (req, res) => {
+  try {
+    // Supabase / Postgres को एक्टिव रखने के लिए हल्की क्वेरी
+    if (db && typeof db.query === "function") {
+      await db.query("SELECT 1;");
+    }
+    res.status(200).json({
+      status: "success",
+      message: "Render & Supabase are active!",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("Keep-Alive Ping Error:", err.message);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
 const { checkAndExpandRadius } = require("./controllers/jobController");
 setInterval(
   () => {
