@@ -2,6 +2,14 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+process.on("uncaughtException", (err) => {
+  console.error("पकड़ी न गई एरर (Uncaught Exception):", err.message);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("अनहैंडल्ड प्रॉमिस रिजेक्शन:", reason);
+});
+
 const app = express();
 const db = require("./config/db");
 
@@ -150,8 +158,12 @@ app.get("/ping", async (req, res) => {
 
 const { checkAndExpandRadius } = require("./controllers/jobController");
 setInterval(
-  () => {
-    checkAndExpandRadius();
+  async () => {
+    try {
+      await checkAndExpandRadius();
+    } catch (err) {
+      console.error("रेडियस एक्सपैंड जॉब में एरर:", err.message);
+    }
   },
   5 * 60 * 1000,
 );
