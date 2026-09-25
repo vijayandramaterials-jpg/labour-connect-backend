@@ -260,6 +260,18 @@ const phonepeCallback = async (req, res) => {
           console.log(
             `✅ Contact Unlocked: Customer=${txn.customer_phone}, Labour=${formattedLabourId}`,
           );
+        } else if (txn.type === "CATEGORY_UNLOCK") {
+          const categoryName = (txn.target_id || "").toLowerCase().trim();
+          const expiresAt = new Date();
+          expiresAt.setHours(23, 59, 59, 999); // Aaj raat 12 baje tak valid
+
+          await db.query(
+            "INSERT INTO purchased_categories (customer_phone, category, expires_at) VALUES ($1, $2, $3)",
+            [txn.customer_phone, categoryName, expiresAt],
+          );
+          console.log(
+            `🔓 Category Unlocked: Customer=${txn.customer_phone}, Category=${categoryName}`,
+          );
         } else if (txn.type === "BULK_PACKAGE") {
           // पेमेंट सफल होने पर कस्टमर की टेबल में 10 क्रेडिट्स (unlock_credits) जोड़ें
           await db.query(

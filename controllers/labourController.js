@@ -158,8 +158,17 @@ const addLabour = async (req, res) => {
 const getLabours = async (req, res) => {
   console.log("===== GET /api/labours HIT =====");
   try {
-    const { search, skill, city, area, latitude, longitude, radius } =
-      req.query;
+    // ⬇️ req.query ke andar 'customer_phone' jod dein
+    const {
+      search,
+      skill,
+      city,
+      area,
+      latitude,
+      longitude,
+      radius,
+      customer_phone,
+    } = req.query;
 
     // 1. पेजिनेशन के लिए पेज और लिमिट सेट करें (डिफ़ॉल्ट: पेज 1, लिमिट 10)
     const page = parseInt(req.query.page) || 1;
@@ -317,9 +326,40 @@ const getLabours = async (req, res) => {
 
     console.log("Rows Returned :", result.rows.length);
 
-    if (result.rows.length > 0) {
-      console.log(result.rows);
+    // 1. Check karein ki is customer ne kaunsi categories unlock ki hui hain
+    let unlockedCategories = [];
+    if (customer_phone) {
+      const catRes = await db.query(
+        "SELECT LOWER(category) AS category FROM purchased_categories WHERE customer_phone = $1 AND expires_at > NOW()",
+        [customer_phone],
+      );
+      unlockedCategories = catRes.rows.map((r) => r.category);
     }
+
+    // 2. Sirf unlocked category ke karigaron ka mobile number dikhayen, baaki ka null
+    const finalLabours = result.rows.map((labour) => {
+      let labourSkills = [];
+      try {
+        labourSkills =
+          typeof labour.skills === "string"
+            ? JSON.parse(labour.skills)
+            : labour.skills || [];
+      } catch (e) {
+        labourSkills = [labour.skill];
+      }
+      if (labour.skill) labourSkills.push(labour.skill);
+
+      // Agar labour ki koi bhi skill customer ki unlocked list me match hoti hai
+      const isUnlocked = labourSkills.some((s) =>
+        unlockedCategories.includes((s || "").toLowerCase().trim()),
+      );
+
+      return {
+        ...labour,
+        phone: isUnlocked ? labour.phone : null, // Unlock hai to number jayega, warna null
+        is_locked: !isUnlocked, // Flutter UI ke liye flag
+      };
+    });
 
     console.log("========== GET LABOURS (OPTIMIZED) ==========");
     console.log(
